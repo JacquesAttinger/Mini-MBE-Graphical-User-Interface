@@ -102,63 +102,6 @@ def get_dxf_units(doc):
     
     return unit_scales.get(insunits, 1.0)  # Default to mm if unknown unit
 
-# def parse_dxf(file_path, resolution=1.0, use_interpolation=True):
-#     """
-#     Reads a DXF file and extracts movement paths.
-#     Supports LINE, LWPOLYLINE, CIRCLE, and ARC entities.
-    
-#     Parameters:
-#       file_path: Path to the DXF file.
-#       resolution: Maximum allowed linear distance between successive points.
-#       use_interpolation: If False, for straight segments only the endpoints are returned.
-      
-#     Returns:
-#       A list of paths. Each path is a list of (x, y) tuples.
-#     """
-#     doc = ezdxf.readfile(file_path)
-#     scale = get_dxf_units(doc)
-#     print('scale', scale)
-
-#     msp = doc.modelspace()
-#     paths = []
-    
-#     for entity in msp:
-#         etype = entity.dxftype()
-#         if etype == 'LINE':
-#             start = entity.dxf.start
-#             end = entity.dxf.end
-#             start_2d = (start[0], start[1])
-#             end_2d = (end[0], end[1])
-#             pts = generate_points_from_line(start_2d, end_2d, resolution, use_interpolation)
-#             paths.append(pts)
-#         elif etype == 'LWPOLYLINE':
-#             points = list(entity.get_points('xy'))
-#             poly_points = []
-#             if not use_interpolation:
-#                 poly_points = [round_point(pt) for pt in points]
-#             else:
-#                 for i in range(len(points) - 1):
-#                     seg_pts = generate_points_from_line(points[i], points[i+1], resolution, use_interpolation)
-#                     if i > 0:
-#                         seg_pts = seg_pts[1:]
-#                     poly_points.extend(seg_pts)
-#             paths.append(poly_points)
-#         elif etype == 'CIRCLE':
-#             center = entity.dxf.center
-#             radius = entity.dxf.radius
-#             center_2d = (center[0], center[1])
-#             pts = generate_points_from_circle(center_2d, radius, resolution)
-#             paths.append(pts)
-#         elif etype == 'ARC':
-#             center = entity.dxf.center
-#             radius = entity.dxf.radius
-#             start_angle = entity.dxf.start_angle
-#             end_angle = entity.dxf.end_angle
-#             center_2d = (center[0], center[1])
-#             pts = generate_points_from_arc(center_2d, radius, start_angle, end_angle, resolution)
-#             paths.append(pts)
-#     return paths
-
 def parse_dxf(file_path, resolution=1.0, use_interpolation=True, force_mm=True):
     """
     Reads a DXF file and extracts movement paths, optionally converting to mm.
@@ -191,7 +134,6 @@ def parse_dxf(file_path, resolution=1.0, use_interpolation=True, force_mm=True):
 
         elif etype == 'LWPOLYLINE':
             points = [(x * scale, y * scale) for x, y in entity.get_points('xy')]  # Scale first
-            print(f"Raw LWPOLYLINE vertices (scaled): {points}")  # Debug
             
             # Close the polyline if not already closed
             if len(points) > 1 and points[0] != points[-1]:
@@ -231,84 +173,6 @@ def parse_dxf(file_path, resolution=1.0, use_interpolation=True, force_mm=True):
             center_2d = (center[0] * scale, center[1] * scale)
             pts = generate_points_from_arc(center_2d, radius, start_angle, end_angle, resolution)
             paths.append(pts)
-
-    return paths
-
-
-# def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, scale=1.0, mirror=False):
-#     """
-#     Converts the DXF file into a complete recipe of (x, y) coordinates.
-#     The paths are concatenated.
-    
-#     Parameters:
-#       file_path: Path to the DXF file.
-#       resolution: Maximum allowed distance between successive points.
-#       use_interpolation: If False, only endpoints are used for straight segments.
-#       scale: Scale factor to apply to the DXF coordinates.
-#       mirror: If True, the X coordinate is multiplied by -1 (to mirror the design).
-      
-#     Returns:
-#       A list of (x, y) tuples representing the overall path.
-#     """
-#     paths = parse_dxf(file_path, resolution, use_interpolation)
-#     recipe = []
-#     for path in paths:
-#         for pt in path:
-#             x, y = pt
-#             x *= scale
-#             y *= scale
-#             if mirror:
-#                 x = -x
-#             recipe.append((x, y))
-#     return recipe
-
-
-
-# def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, scale=1.0, mirror=False, z_height=0.0):
-#     """
-#     Enhanced version that returns path metadata and 3D coordinates
-#     """
-#     paths = parse_dxf(file_path, resolution, use_interpolation)
-#     recipe = []
-#     segment_lengths = []
-    
-#     for path in paths:
-#         for i in range(len(path)-1):
-#             x1, y1 = path[i]
-#             x2, y2 = path[i+1]
-            
-#             # Apply transformations
-#             x1 *= scale
-#             y1 *= scale
-#             x2 *= scale
-#             y2 *= scale
-#             if mirror:
-#                 x1, x2 = -x1, -x2
-            
-#             # Calculate segment length
-#             dx = x2 - x1
-#             dy = y2 - y1
-#             segment_length = math.hypot(dx, dy)
-#             segment_lengths.append(segment_length)
-            
-#             recipe.append((x1, y1, z_height))
-#         if path:  # Add last point
-#             x, y = path[-1]
-#             x *= scale
-#             y *= scale
-#             if mirror:
-#                 x = -x
-#             recipe.append((x, y, z_height))
-    
-#     return {
-#         'vertices': recipe,
-#         'metadata': {
-#             'total_length': sum(segment_lengths),
-#             'num_segments': len(segment_lengths),
-#             'resolution': resolution,
-#             'scale': scale
-#         }
-#     }
 
 def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, scale=1.0, mirror=False, z_height=0.0):
     """Returns standardized format with both display and movement data"""

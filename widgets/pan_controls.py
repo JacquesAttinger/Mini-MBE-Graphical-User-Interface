@@ -1,4 +1,3 @@
-# ui/widgets/pan_controls.py
 from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout
 from PySide6.QtCore import Qt
 
@@ -26,7 +25,7 @@ class PanControlWidget(QWidget):
             btn.setFixedSize(30, 30)
             btn.setFocusPolicy(Qt.NoFocus)
         
-        # Connect signals - THIS IS THE CRITICAL PART
+        # Connect signals
         self.btn_reset.clicked.connect(self.canvas.reset_view)
         self.btn_up.clicked.connect(lambda: self.canvas.pan_view(0, 0.1))
         self.btn_down.clicked.connect(lambda: self.canvas.pan_view(0, -0.1))
@@ -46,5 +45,5 @@ class PanControlWidget(QWidget):
         layout.addWidget(self.btn_up)
         layout.addWidget(self.btn_down)
         layout.addWidget(self.btn_right)
-        
+
         self.setLayout(layout)
