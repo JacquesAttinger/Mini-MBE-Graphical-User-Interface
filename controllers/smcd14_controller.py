@@ -355,6 +355,10 @@ class ManipulatorController:
         regs = self._read_registers(address=ACTUAL_POS_ADDR, count=2)
         return registers_to_float(regs)
 
+    def get_position(self) -> float:
+        """Compatibility wrapper for older callers."""
+        return self.read_position()
+
     def read_error_code(self) -> int:
         self._check_connection()
         regs = self._read_registers(address=ERROR_CODE_ADDR, count=1)
