@@ -19,6 +19,9 @@ if root_dir not in sys.path:
 
 from pymodbus.client import ModbusTcpClient
 
+# Quiet noisy auto-reconnect warnings from pymodbus
+logging.getLogger("pymodbus").setLevel(logging.ERROR)
+
 # ----------------------------------------------------------------------
 # Register Addresses (SMCD14 manual references)
 # ----------------------------------------------------------------------

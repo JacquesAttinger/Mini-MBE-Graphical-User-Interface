@@ -50,17 +50,20 @@ class ManipulatorManager(QObject):
         Returns a dictionary mapping axis names to a boolean connection status.
         """
         status = {}
+        any_connected = False
         for axis, ctrl in self.controllers.items():
             try:
                 connected = ctrl.connect()
                 status[axis] = connected
                 self.connection_changed.emit(axis, connected)
                 if connected:
+                    any_connected = True
                     self.status_updated.emit(f"{axis.upper()} axis connected")
             except Exception as exc:  # pragma: no cover - hardware dependent
                 status[axis] = False
                 self.error_occurred.emit(axis, str(exc))
-        self._start_monitor()
+        if any_connected:
+            self._start_monitor()
         return status
 
     def disconnect_all(self):
