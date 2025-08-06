@@ -1,0 +1,6 @@
+ezdxf
+matplotlib
+numpy
+pymodbus
+PySide6
+shapely>=2.0
