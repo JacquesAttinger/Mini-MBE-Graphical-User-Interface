@@ -109,14 +109,16 @@ class MainWindow(QMainWindow):
         self.status_panel.log_message(f"{axis.upper()} axis: {state}")
 
     def _handle_position_update(self, axis, position):
+        previous = self._positions.get(axis)
         self._positions[axis] = position
         self.position_canvas.update_position(
             self._positions["x"],
             self._positions["y"],
         )
-        self.status_panel.log_message(
-            f"{axis.upper()} position: {position:.3f} mm"
-        )
+        if previous is None or abs(position - previous) >= 0.01:
+            self.status_panel.log_message(
+                f"{axis.upper()} position: {position:.3f} mm"
+            )
 
     def _handle_error(self, axis, message):
         self.status_panel.log_message(f"{axis} ERROR: {message}")

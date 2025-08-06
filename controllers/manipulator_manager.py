@@ -128,12 +128,22 @@ class ManipulatorManager(QObject):
         while self._monitoring:
             for axis, ctrl in self.controllers.items():
                 client = ctrl.client
-                if not client or not getattr(client, "connected", False):
+                if not client:
+                    continue
+                connected_attr = getattr(client, "connected", None)
+                is_connected = (
+                    connected_attr()
+                    if callable(connected_attr)
+                    else bool(connected_attr)
+                )
+                if not is_connected:
                     continue
                 try:
                     pos = ctrl.read_position()
                     self.position_updated.emit(axis, pos)
                 except Exception as exc:  # pragma: no cover - hardware dependent
                     self.error_occurred.emit(axis, f"Monitor error: {exc}")
+                    ctrl.disconnect()
+                    self.connection_changed.emit(axis, False)
             time.sleep(0.3)
 
