@@ -86,44 +86,6 @@ class EnhancedPositionCanvas(FigureCanvas):
         self.current_position = (x, y)
         self.update_plot()
 
-    # def update_dxf(self, geometry, scale_factor=1.0):
-    #     """Render DXF with exact original connections"""
-    #     self.scale_factor = scale_factor
-        
-    #     # Clear existing
-    #     for collection in self._dxf_lines:
-    #         collection.remove()
-    #     self._dxf_lines = []
-        
-    #     if isinstance(geometry, dict) and 'display_paths' in geometry:
-    #         self.dxf_geometry = geometry['display_paths']
-    #     elif isinstance(geometry, list):
-    #         self.dxf_geometry = geometry
-        
-    #     # Draw each original segment separately
-    #     if self.dxf_geometry:
-    #         for path in self.dxf_geometry:
-    #             if len(path) < 2:
-    #                 continue
-                    
-    #             # Convert to segments
-    #             segments = []
-    #             for i in range(len(path)-1):
-    #                 segments.append([path[i], path[i+1]])
-                
-    #             # Create line collection
-    #             lc = LineCollection(
-    #                 segments,
-    #                 colors='blue',
-    #                 linewidths=1.5,
-    #                 alpha=0.7,
-    #                 zorder=5
-    #             )
-    #             self.ax.add_collection(lc)
-    #             self._dxf_lines.append(lc)
-        
-    #     self.update_plot()
-
     def update_dxf(self, geometry, scale_factor=1.0):
         """Handle the standardized format"""
         try:
@@ -324,6 +286,6 @@ class EnhancedPositionCanvas(FigureCanvas):
         all_points = [pt for path in paths for pt in path]
         if not all_points:
             return 0.01  # Default zoom if no geometry
-        
+
         xs, ys = zip(*all_points)
         return max(max(xs) - min(xs), max(ys) - min(ys)) * 1.1  # 10% padding

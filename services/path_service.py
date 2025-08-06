@@ -28,7 +28,6 @@ class PathService(QObject):
 
     def load_path(self, path_data):
         self.current_path = path_data['vertices']
-        # self.path_metadata = path_data['metadata']
         self.segment_boundaries = path_data.get('segments', [])
         self.current_index = 0
 
@@ -123,18 +122,13 @@ class PathService(QObject):
         dy = abs(end_pos[1] - start_pos[1])
         dz = abs(end_pos[2] - start_pos[2])
         
-        times = []
         times = {}
-        if vx != 0: times['X'] = dx / abs(vx)
-        if vy != 0: times['Y'] = dy / abs(vy)
-        if vz != 0: times['Z'] = dz / abs(vz)
-
-        # if vx != 0: times.append(dx / abs(vx))
-        # if vy != 0: times.append(dy / abs(vy))
-        # if vz != 0: times.append(dz / abs(vz))
-
-        # for key, value in vs.items():
-        #     index = ['X', 'Y', 'Z'].index(key)
+        if vx != 0:
+            times['X'] = dx / abs(vx)
+        if vy != 0:
+            times['Y'] = dy / abs(vy)
+        if vz != 0:
+            times['Z'] = dz / abs(vz)
         
         if not times:  # No movement needed
             return True
@@ -143,20 +137,9 @@ class PathService(QObject):
         total_time = times[limit_axis]
 
         vs = {'X': vx, 'Y': vy, 'Z': vz}
-        end_pos = {
-            'X': end_pos[0],
-            'Y': end_pos[1],
-            'Z': end_pos[2]
-        }
-        # for axis in ['X', 'Y', 'Z']:
-        #     self.controllers[axis].move_absolute(end_pos[axis], vs[axis])
-
-        # # Wait for all axes to finish moving
-        # self.controllers[limit_axis].wait_until_in_position(timeout = total_time*2)
-
-        # print(end_pos, vs, total_time)
+        end_pos = {'X': end_pos[0], 'Y': end_pos[1], 'Z': end_pos[2]}
         return
-    
+
 
     def _process_next_point(self):
         if self.is_paused or self.current_index >= len(self.current_path):
@@ -182,11 +165,8 @@ class PathService(QObject):
         dz = target[2] - current_pos[2]
         distance = np.linalg.norm([dx, dy, dz])
         
-        # Move to target (using your existing move_to_point function)
         self.point_trajectory(current_pos, target, velocity=1e-3)
 
-        # self.controllers.move_to_point(current_pos, target, velocity=1e-3)
-        
         self.progress_updated.emit(*target)
         self.current_index += 1
         
@@ -198,8 +178,8 @@ class PathService(QObject):
         if self.current_index == 0:
             return 0
         return min(self.current_index - 1, len(self.current_path) - 1)
-
     def get_progress(self):
         if not self.current_path:
             return 0
         return self.current_index / len(self.current_path)
+
