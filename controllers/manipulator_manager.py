@@ -127,7 +127,8 @@ class ManipulatorManager(QObject):
     def _monitor_loop(self):
         while self._monitoring:
             for axis, ctrl in self.controllers.items():
-                if not ctrl.client:
+                client = ctrl.client
+                if not client or not getattr(client, "connected", False):
                     continue
                 try:
                     pos = ctrl.read_position()

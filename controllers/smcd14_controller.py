@@ -143,10 +143,18 @@ class ManipulatorController:
         Establishes the Modbus TCP connection.
         """
         with self._lock:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.client = ModbusTcpClient(host=self.host, port=self.port, timeout=self.timeout)
-            result = self.client.connect()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            client = ModbusTcpClient(host=self.host, port=self.port, timeout=self.timeout)
+            result = client.connect()
+            if result:
+                self.loop = loop
+                self.client = client
+            else:
+                # Clean up resources so we don't leave a half-open client
+                client.close()
+                loop.run_until_complete(asyncio.sleep(0))
+                loop.close()
         return result
 
     def disconnect(self) -> None:
