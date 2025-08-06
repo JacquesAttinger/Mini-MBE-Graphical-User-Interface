@@ -75,45 +75,62 @@ class ManipulatorManager(QObject):
             except Exception:  # pragma: no cover - best effort
                 pass
 
+    def _run_async(self, axis: str, action, *args):
+        """Execute controller actions in a background thread.
+
+        Parameters
+        ----------
+        axis:
+            Axis identifier used for routing errors.
+        action:
+            Callable receiving the controller instance and ``*args``.
+            It may optionally return a status string which will be emitted
+            via :attr:`status_updated`.
+        *args:
+            Additional arguments passed to ``action``.
+        """
+
+        def worker():
+            ctrl = self.controllers[axis]
+            try:
+                message = action(ctrl, *args)
+                if message:
+                    self.status_updated.emit(message)
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                self.error_occurred.emit(axis, str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # ------------------------------------------------------------------
     # Movement commands
     # ------------------------------------------------------------------
     def move_axis(self, axis: str, position: float, velocity: float):
         """Move an individual axis in a worker thread."""
-        def worker():
-            ctrl = self.controllers[axis]
-            try:
-                ctrl.move_absolute(position, velocity)
-                self.status_updated.emit(
-                    f"{axis.upper()} moved to {position:.3f} mm")
-            except Exception as exc:  # pragma: no cover - hardware dependent
-                self.error_occurred.emit(axis, str(exc))
-        threading.Thread(target=worker, daemon=True).start()
+
+        def action(ctrl, position, velocity):
+            ctrl.move_absolute(position, velocity)
+            return f"{axis.upper()} moved to {position:.3f} mm"
+
+        self._run_async(axis, action, position, velocity)
 
     def emergency_stop(self, axis: str):
         """Trigger emergency stop on a specific axis."""
-        def worker():
-            ctrl = self.controllers[axis]
-            try:
-                ctrl.emergency_stop()
-                self.status_updated.emit(
-                    f"{axis.upper()} emergency stop executed")
-            except Exception as exc:  # pragma: no cover - hardware dependent
-                self.error_occurred.emit(axis, str(exc))
-        threading.Thread(target=worker, daemon=True).start()
+
+        def action(ctrl):
+            ctrl.emergency_stop()
+            return f"{axis.upper()} emergency stop executed"
+
+        self._run_async(axis, action)
 
     def home_axis(self, axis: str):
         """Placeholder homing operation."""
-        def worker():
-            ctrl = self.controllers[axis]
-            try:
-                ctrl.motor_on()
-                # Actual homing logic would be implemented here
-                self.status_updated.emit(
-                    f"{axis.upper()} homing procedure started")
-            except Exception as exc:  # pragma: no cover - hardware dependent
-                self.error_occurred.emit(axis, str(exc))
-        threading.Thread(target=worker, daemon=True).start()
+
+        def action(ctrl):
+            ctrl.motor_on()
+            # Actual homing logic would be implemented here
+            return f"{axis.upper()} homing procedure started"
+
+        self._run_async(axis, action)
 
     # ------------------------------------------------------------------
     # Background monitoring
