@@ -1,5 +1,4 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QLabel, 
-                              QScrollArea, QHBoxLayout)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLabel, QScrollArea
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 

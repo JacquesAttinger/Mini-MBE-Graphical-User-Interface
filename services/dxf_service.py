@@ -1,6 +1,5 @@
 """Async DXF loading utilities for the GUI."""
 
-import os
 import threading
 from PySide6.QtCore import QObject, Signal
 
