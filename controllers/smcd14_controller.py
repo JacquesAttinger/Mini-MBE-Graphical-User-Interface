@@ -19,6 +19,9 @@ if root_dir not in sys.path:
 
 from pymodbus.client import ModbusTcpClient
 
+# Quiet noisy auto-reconnect warnings from pymodbus
+logging.getLogger("pymodbus").setLevel(logging.ERROR)
+
 # ----------------------------------------------------------------------
 # Register Addresses (SMCD14 manual references)
 # ----------------------------------------------------------------------
@@ -143,10 +146,18 @@ class ManipulatorController:
         Establishes the Modbus TCP connection.
         """
         with self._lock:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.client = ModbusTcpClient(host=self.host, port=self.port, timeout=self.timeout)
-            result = self.client.connect()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            client = ModbusTcpClient(host=self.host, port=self.port, timeout=self.timeout)
+            result = client.connect()
+            if result:
+                self.loop = loop
+                self.client = client
+            else:
+                # Clean up resources so we don't leave a half-open client
+                client.close()
+                loop.run_until_complete(asyncio.sleep(0))
+                loop.close()
         return result
 
     def disconnect(self) -> None:
@@ -346,6 +357,10 @@ class ManipulatorController:
         self._check_connection()
         regs = self._read_registers(address=ACTUAL_POS_ADDR, count=2)
         return registers_to_float(regs)
+
+    def get_position(self) -> float:
+        """Compatibility wrapper for older callers."""
+        return self.read_position()
 
     def read_error_code(self) -> int:
         self._check_connection()
