@@ -24,6 +24,7 @@ class MainWindow(QMainWindow):
         self.manager = manager
         self.dxf_service = dxf_service
         self.controllers = manager.controllers
+        self._positions = {"x": 0.0, "y": 0.0, "z": 0.0}
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -108,9 +109,10 @@ class MainWindow(QMainWindow):
         self.status_panel.log_message(f"{axis.upper()} axis: {state}")
 
     def _handle_position_update(self, axis, position):
+        self._positions[axis] = position
         self.position_canvas.update_position(
-            self.controllers["x"].get_position() or 0,
-            self.controllers["y"].get_position() or 0,
+            self._positions["x"],
+            self._positions["y"],
         )
         self.status_panel.log_message(
             f"{axis.upper()} position: {position:.3f} mm"
