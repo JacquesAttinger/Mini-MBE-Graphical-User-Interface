@@ -1,6 +1,5 @@
 # ui/widgets/pan_controls.py
-from PySide6.QtWidgets import (QWidget, QPushButton, QHBoxLayout, 
-                              QSizePolicy, QSpacerItem)
+from PySide6.QtWidgets import QWidget, QPushButton, QHBoxLayout
 from PySide6.QtCore import Qt
 
 class PanControlWidget(QWidget):

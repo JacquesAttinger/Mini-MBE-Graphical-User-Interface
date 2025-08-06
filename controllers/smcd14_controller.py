@@ -5,17 +5,7 @@ import struct
 import time
 from threading import Lock
 
-import sys
-import os
-
 import math
-import time
-
-# Add the root directory to Python path
-
-root_dir = 'C:\\Users\\yangg\\OneDrive\\Documents\\Python_Scripts\\Mini_MBE_Printing'
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
 
 from pymodbus.client import ModbusTcpClient
 

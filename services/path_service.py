@@ -1,6 +1,5 @@
 import numpy as np
 import math
-import time
 from PySide6.QtCore import QObject, Signal, QTimer
 
 # ----------------------------------------------------------------------
