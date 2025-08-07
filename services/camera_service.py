@@ -65,6 +65,11 @@ class CameraService(QObject):
                         self.error_occurred.emit("No cameras found")
                         return
                     self._cam = cams[0]
+                    open_fn = getattr(self._cam, "open", None) or getattr(
+                        self._cam, "_open", None
+                    )
+                    if open_fn:
+                        open_fn()
 
                     try:
                         exp_feat = self._cam.get_feature_by_name("ExposureTime")
@@ -92,6 +97,11 @@ class CameraService(QObject):
                         except Exception:
                             pass
                         try:
+                            close_fn = getattr(self._cam, "close", None) or getattr(
+                                self._cam, "_close", None
+                            )
+                            if close_fn:
+                                close_fn()
                         except Exception:
                             pass
                         self._cam = None
