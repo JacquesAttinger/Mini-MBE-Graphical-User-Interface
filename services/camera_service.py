@@ -1,76 +1,114 @@
-#!/usr/bin/env python3
-"""
-Standalone VmbPy camera test.
+"""Asynchronous camera service using VmbPy."""
 
-Runs the first attached camera, streams frames, and displays them in an OpenCV window.
-Press Ctrl+C or 'q' to quit.
-"""
+from __future__ import annotations
 
-import sys
+import threading
 import time
+from typing import Optional
 
-# Try OpenCV for display; fall back to console shapes if missing
-try:
-    import cv2
-except ImportError:
-    cv2 = None
+from PySide6.QtCore import QObject, Signal
 
-from vmbpy import VmbSystem, FrameStatus, PixelFormat
+try:  # pragma: no cover - dependent on optional hardware
+    from vmbpy import VmbSystem, FrameStatus, PixelFormat
+except Exception:  # pragma: no cover - handled at runtime
+    VmbSystem = None  # type: ignore
+    FrameStatus = None  # type: ignore
+    PixelFormat = None  # type: ignore
 
 
-def frame_handler(camera, stream, frame):
-    # Only process complete frames
-    if frame.get_status() == FrameStatus.Complete:
-        # Ensure BGR8 for display
+class CameraService(QObject):
+    """Background service that streams frames from the first available camera."""
+
+    frame_received = Signal(object)
+    error_occurred = Signal(str)
+    camera_ready = Signal(float, float, float, float)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+        self._cam = None
+        self._exp_feat = None
+        self._gain_feat = None
+
+    # ------------------------------------------------------------------
+    def start(self) -> None:
+        """Start the camera streaming in a background thread."""
+        if self._thread:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    # ------------------------------------------------------------------
+    def stop(self) -> None:
+        """Stop streaming and close the camera."""
+        self._running = False
+        if self._thread:
+            self._thread.join()
+            self._thread = None
+
+    # ------------------------------------------------------------------
+    def _run(self) -> None:  # pragma: no cover - hardware interaction
+        if VmbSystem is None:
+            self.error_occurred.emit("vmbpy library not available")
+            return
         try:
-            if frame.get_pixel_format() != PixelFormat.Bgr8:
-                frame.convert_pixel_format(PixelFormat.Bgr8)
-        except Exception:
-            pass
+            with VmbSystem.get_instance() as system:
+                cams = system.get_all_cameras()
+                if not cams:
+                    self.error_occurred.emit("No cameras found")
+                    return
+                self._cam = cams[0]
+                self._cam._open()
 
-        img = frame.as_numpy_ndarray()
+                try:
+                    exp_feat = self._cam.get_feature_by_name("ExposureTime")
+                    exp_min, exp_max = exp_feat.get_range()
+                    self._exp_feat = exp_feat
+                except Exception:
+                    exp_min, exp_max = 0.0, 100.0
 
-        if cv2:
-            cv2.imshow("VmbPy Stream", img)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                raise KeyboardInterrupt
-        else:
-            print(f"Got frame: shape={img.shape}")
+                try:
+                    gain_feat = self._cam.get_feature_by_name("Gain")
+                    gain_min, gain_max = gain_feat.get_range()
+                    self._gain_feat = gain_feat
+                except Exception:
+                    gain_min, gain_max = 0.0, 100.0
 
-    # re-queue for continuous streaming
-    camera.queue_frame(frame)
+                self.camera_ready.emit(exp_min, exp_max, gain_min, gain_max)
 
+                self._cam.start_streaming(handler=self._frame_handler, buffer_count=5)
+                while self._running:
+                    time.sleep(0.01)
+                self._cam.stop_streaming()
+                self._cam._close()
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
 
-def main():
-    # Grab the singleton VmbSystem
-    with VmbSystem.get_instance() as system:
-        cams = system.get_all_cameras()
-        if not cams:
-            print("❌ No cameras found.")
-            sys.exit(1)
+    # ------------------------------------------------------------------
+    def _frame_handler(self, cam, stream, frame):  # pragma: no cover - hardware interaction
+        if FrameStatus and frame.get_status() == FrameStatus.Complete:
+            try:
+                if frame.get_pixel_format() != PixelFormat.Bgr8:
+                    frame.convert_pixel_format(PixelFormat.Bgr8)
+            except Exception:
+                pass
+            self.frame_received.emit(frame.as_numpy_ndarray())
+        cam.queue_frame(frame)
 
-        cam = cams[0]
-        print(f"✅ Opening camera {cam.get_id()}")
+    # ------------------------------------------------------------------
+    def set_exposure(self, value: int) -> None:
+        if self._cam and self._exp_feat:
+            try:
+                self._exp_feat.set(value)
+            except Exception as exc:
+                self.error_occurred.emit(f"Failed to set exposure: {exc}")
 
-        # use the private API names
-        cam._open()
-        print("▶️  Starting stream...")
-        cam.start_streaming(handler=frame_handler, buffer_count=5)
-
-        try:
-            # keep main thread alive to receive callbacks
-            while True:
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            print("\n⏹  Stopping stream...")
-
-        # stop & close using the private API
-        cam.stop_streaming()
-        cam._close()
-
-        if cv2:
-            cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    main()
+    # ------------------------------------------------------------------
+    def set_gain(self, value: int) -> None:
+        if self._cam and self._gain_feat:
+            try:
+                self._gain_feat.set(value)
+            except Exception as exc:
+                self.error_occurred.emit(f"Failed to set gain: {exc}")
