@@ -9,12 +9,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFileDialog,
     QMessageBox,
+    QTabWidget,
 )
 
 from widgets.axis_control import AxisControlWidget
 from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
 from widgets.status_panel import StatusPanel
-from windows.camera_window import CameraWindow
+from widgets.camera_tab import CameraTab
 
 
 class MainWindow(QMainWindow):
@@ -26,7 +27,6 @@ class MainWindow(QMainWindow):
         self.dxf_service = dxf_service
         self.controllers = manager.controllers
         self._positions = {"x": 0.0, "y": 0.0, "z": 0.0}
-        self.camera_window = None
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -35,9 +35,15 @@ class MainWindow(QMainWindow):
     # UI setup
     # ------------------------------------------------------------------
     def _setup_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        tabs = QTabWidget()
+        self.setCentralWidget(tabs)
+
+        # ------------------------------------------------------------------
+        # Main control tab
+        # ------------------------------------------------------------------
+        main_tab = QWidget()
+        tabs.addTab(main_tab, "Main")
+        main_layout = QHBoxLayout(main_tab)
 
         # Left panel - axis controls
         left_panel = QWidget()
@@ -67,16 +73,18 @@ class MainWindow(QMainWindow):
         self.load_dxf_btn = QPushButton("Load DXF")
         right_layout.addWidget(self.load_dxf_btn)
 
-        # Camera window button
-        self.open_camera_btn = QPushButton("Open Camera")
-        right_layout.addWidget(self.open_camera_btn)
-
         # Status panel
         self.status_panel = StatusPanel()
         right_layout.addWidget(self.status_panel)
 
         main_layout.addWidget(left_panel)
         main_layout.addWidget(right_panel, stretch=1)
+
+        # ------------------------------------------------------------------
+        # Camera tab
+        # ------------------------------------------------------------------
+        self.camera_tab = CameraTab()
+        tabs.addTab(self.camera_tab, "Camera")
 
         self.setWindowTitle("MBE Manipulator Control")
         self.resize(1200, 800)
@@ -95,7 +103,6 @@ class MainWindow(QMainWindow):
         self.dxf_service.error_occurred.connect(
             lambda msg: self._handle_error("DXF", msg)
         )
-        self.open_camera_btn.clicked.connect(self._open_camera_window)
 
     # ------------------------------------------------------------------
     # Slots
@@ -143,13 +150,6 @@ class MainWindow(QMainWindow):
         self.status_panel.log_message(
             f"Loaded DXF: {os.path.basename(filename)}"
         )
-
-    def _open_camera_window(self):
-        if self.camera_window is None:
-            self.camera_window = CameraWindow(self)
-        self.camera_window.show()
-        self.camera_window.raise_()
-        self.camera_window.activateWindow()
 
     # ------------------------------------------------------------------
     # Qt events
