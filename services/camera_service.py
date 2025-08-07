@@ -37,7 +37,7 @@ class CameraService(QObject):
         if self._thread:
             return
         self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread = threading.Thread(target=self._run)
         self._thread.start()
 
     # ------------------------------------------------------------------
@@ -45,58 +45,67 @@ class CameraService(QObject):
         """Stop streaming and close the camera."""
         self._running = False
 
-        if self._cam:
-            try:
-                self._cam.stop_streaming()
-            except Exception:
-                pass
-            try:
-                self._cam._close()
-            except Exception:
-                pass
-            self._cam = None
-
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
+        self._cam = None
+        self._exp_feat = None
+        self._gain_feat = None
 
     # ------------------------------------------------------------------
     def _run(self) -> None:  # pragma: no cover - hardware interaction
         if VmbSystem is None:
             self.error_occurred.emit("vmbpy library not available")
             return
-        try:
-            with VmbSystem.get_instance() as system:
-                cams = system.get_all_cameras()
-                if not cams:
-                    self.error_occurred.emit("No cameras found")
+        for attempt in range(2):
+            try:
+                with VmbSystem.get_instance() as system:
+                    cams = system.get_all_cameras()
+                    if not cams:
+                        self.error_occurred.emit("No cameras found")
+                        return
+                    self._cam = cams[0]
+                    self._cam.open()
+
+                    try:
+                        exp_feat = self._cam.get_feature_by_name("ExposureTime")
+                        exp_min, exp_max = exp_feat.get_range()
+                        self._exp_feat = exp_feat
+                    except Exception:
+                        exp_min, exp_max = 0.0, 100.0
+
+                    try:
+                        gain_feat = self._cam.get_feature_by_name("Gain")
+                        gain_min, gain_max = gain_feat.get_range()
+                        self._gain_feat = gain_feat
+                    except Exception:
+                        gain_min, gain_max = 0.0, 100.0
+
+                    self.camera_ready.emit(exp_min, exp_max, gain_min, gain_max)
+
+                    self._cam.start_streaming(handler=self._frame_handler, buffer_count=5)
+                    try:
+                        while self._running:
+                            time.sleep(0.01)
+                    finally:
+                        try:
+                            self._cam.stop_streaming()
+                        except Exception:
+                            pass
+                        try:
+                            self._cam.close()
+                        except Exception:
+                            pass
+                        self._cam = None
+                        self._exp_feat = None
+                        self._gain_feat = None
                     return
-                self._cam = cams[0]
-                self._cam._open()
-
-                try:
-                    exp_feat = self._cam.get_feature_by_name("ExposureTime")
-                    exp_min, exp_max = exp_feat.get_range()
-                    self._exp_feat = exp_feat
-                except Exception:
-                    exp_min, exp_max = 0.0, 100.0
-
-                try:
-                    gain_feat = self._cam.get_feature_by_name("Gain")
-                    gain_min, gain_max = gain_feat.get_range()
-                    self._gain_feat = gain_feat
-                except Exception:
-                    gain_min, gain_max = 0.0, 100.0
-
-                self.camera_ready.emit(exp_min, exp_max, gain_min, gain_max)
-
-                self._cam.start_streaming(handler=self._frame_handler, buffer_count=5)
-                while self._running:
-                    time.sleep(0.01)
-                self._cam.stop_streaming()
-                self._cam._close()
-        except Exception as exc:
-            self.error_occurred.emit(str(exc))
+            except Exception as exc:
+                if attempt == 0:
+                    time.sleep(0.5)
+                    continue
+                self.error_occurred.emit(str(exc))
+                return
 
     # ------------------------------------------------------------------
     def _frame_handler(self, cam, stream, frame):  # pragma: no cover - hardware interaction
