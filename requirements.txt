@@ -4,4 +4,4 @@ numpy
 pymodbus
 PySide6
 shapely>=2.0
-vimba
+vmbpy
