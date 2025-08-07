@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import logging
 from PySide6.QtCore import QObject, Signal, QTimer
 
 # ----------------------------------------------------------------------
@@ -114,7 +115,7 @@ class PathService(QObject):
         try:
             vx, vy, vz = self.calculate_velocity_components(start_pos, end_pos, velocity)
         except ValueError as e:
-            print(f"Velocity error: {e}")
+            logging.error("Velocity error: %s", e)
             return False
             
         # Calculate move time based on longest axis
@@ -155,7 +156,7 @@ class PathService(QObject):
                 float(self.controllers['Z'].read_position())
             )
         except Exception as e:
-            print(f"Position read error: {e}")
+            logging.error("Position read error: %s", e)
             self.pause()
             return
 
