@@ -1,76 +1,76 @@
-"""Service for streaming images from a VmbPy compatible camera."""
+#!/usr/bin/env python3
+"""
+Standalone VmbPy camera test.
 
-from __future__ import annotations
+Runs the first attached camera, streams frames, and displays them in an OpenCV window.
+Press Ctrl+C or 'q' to quit.
+"""
 
-from PySide6.QtCore import QObject, Signal
+import sys
+import time
 
-try:  # pragma: no cover - optional dependency
-    from vmbpy import FrameStatus, PixelFormat, VmbSystem
-except Exception:  # pragma: no cover - library may be missing on dev machines
-    VmbSystem = None
-    FrameStatus = None
-    PixelFormat = None
+# Try OpenCV for display; fall back to console shapes if missing
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+from vmbpy import VmbSystem, FrameStatus, PixelFormat
 
 
-class CameraService(QObject):
-    """Thin wrapper around the VmbPy API emitting frames as numpy arrays."""
-
-    frame_received = Signal(object)
-    error_occurred = Signal(str)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._system = None
-        self._camera = None
-
-    # ------------------------------------------------------------------
-    def start(self) -> None:
-        """Open the first available camera and begin streaming."""
-
-        if VmbSystem is None:
-            self.error_occurred.emit("VmbPy SDK not available")
-            return
+def frame_handler(camera, stream, frame):
+    # Only process complete frames
+    if frame.get_status() == FrameStatus.Complete:
+        # Ensure BGR8 for display
         try:
-            self._system = VmbSystem.get_instance()
-            self._system.__enter__()
-            cameras = self._system.get_all_cameras()
-            if not cameras:
-                raise RuntimeError("No camera detected")
-            self._camera = cameras[0]
-            self._camera.open()
-            self._camera.start_streaming(handler=self._frame_handler, buffer_count=5)
-        except Exception as exc:  # pragma: no cover - hardware dependent
-            self.error_occurred.emit(str(exc))
+            if frame.get_pixel_format() != PixelFormat.Bgr8:
+                frame.convert_pixel_format(PixelFormat.Bgr8)
+        except Exception:
+            pass
 
-    # ------------------------------------------------------------------
-    def stop(self) -> None:
-        """Stop streaming and release resources."""
+        img = frame.as_numpy_ndarray()
 
-        try:
-            if self._camera is not None:
-                self._camera.stop_streaming()
-                self._camera.close()
-        finally:
-            if self._system is not None:
-                self._system.__exit__(None, None, None)
-            self._camera = None
-            self._system = None
+        if cv2:
+            cv2.imshow("VmbPy Stream", img)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                raise KeyboardInterrupt
+        else:
+            print(f"Got frame: shape={img.shape}")
 
-    # ------------------------------------------------------------------
-    def _frame_handler(self, cam, stream, frame) -> None:  # pragma: no cover - callback
-        """Handle frames from the camera and emit as numpy arrays."""
+    # re-queue for continuous streaming
+    camera.queue_frame(frame)
+
+
+def main():
+    # Grab the singleton VmbSystem
+    with VmbSystem.get_instance() as system:
+        cams = system.get_all_cameras()
+        if not cams:
+            print("❌ No cameras found.")
+            sys.exit(1)
+
+        cam = cams[0]
+        print(f"✅ Opening camera {cam.get_id()}")
+
+        # use the private API names
+        cam._open()
+        print("▶️  Starting stream...")
+        cam.start_streaming(handler=frame_handler, buffer_count=5)
 
         try:
-            if FrameStatus is None or frame.get_status() == FrameStatus.Complete:
-                try:
-                    display = (
-                        frame if PixelFormat is None or frame.get_pixel_format() == PixelFormat.Bgr8
-                        else frame.convert_pixel_format(PixelFormat.Bgr8)
-                    )
-                except Exception:
-                    display = frame
-                img = display.as_numpy_ndarray()
-                self.frame_received.emit(img)
-        finally:
-            cam.queue_frame(frame)
+            # keep main thread alive to receive callbacks
+            while True:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\n⏹  Stopping stream...")
 
+        # stop & close using the private API
+        cam.stop_streaming()
+        cam._close()
+
+        if cv2:
+            cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
