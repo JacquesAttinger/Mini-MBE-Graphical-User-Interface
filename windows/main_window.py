@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QTabWidget,
+    QDoubleSpinBox,
+    QLabel,
 )
 
 from widgets.axis_control import AxisControlWidget
@@ -27,6 +29,8 @@ class MainWindow(QMainWindow):
         self.dxf_service = dxf_service
         self.controllers = manager.controllers
         self._positions = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self._vertices = []
+        self._segments = []
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -73,6 +77,29 @@ class MainWindow(QMainWindow):
         self.load_dxf_btn = QPushButton("Load DXF")
         right_layout.addWidget(self.load_dxf_btn)
 
+        # Pattern controls
+        self.nozzle_input = QDoubleSpinBox()
+        self.nozzle_input.setPrefix("Nozzle Ø ")
+        self.nozzle_input.setSuffix(" µm")
+        self.nozzle_input.setRange(1.0, 1000.0)
+        self.nozzle_input.setValue(12.0)
+        right_layout.addWidget(self.nozzle_input)
+
+        self.speed_input = QDoubleSpinBox()
+        self.speed_input.setPrefix("Speed ")
+        self.speed_input.setSuffix(" mm/s")
+        self.speed_input.setDecimals(4)
+        self.speed_input.setRange(0.0001, 2.0)
+        self.speed_input.setValue(0.1)
+        right_layout.addWidget(self.speed_input)
+
+        self.start_pattern_btn = QPushButton("Start Pattern")
+        self.start_pattern_btn.setEnabled(False)
+        right_layout.addWidget(self.start_pattern_btn)
+
+        self.progress_label = QLabel("Pattern progress: 0%")
+        right_layout.addWidget(self.progress_label)
+
         # Status panel
         self.status_panel = StatusPanel()
         right_layout.addWidget(self.status_panel)
@@ -103,6 +130,9 @@ class MainWindow(QMainWindow):
         self.dxf_service.error_occurred.connect(
             lambda msg: self._handle_error("DXF", msg)
         )
+        self.start_pattern_btn.clicked.connect(self._on_start_pattern)
+        self.manager.pattern_progress.connect(self._update_pattern_progress)
+        self.manager.pattern_completed.connect(self._handle_pattern_completed)
 
     # ------------------------------------------------------------------
     # Slots
@@ -147,9 +177,29 @@ class MainWindow(QMainWindow):
 
     def _handle_dxf_loaded(self, filename, geometry):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
+        self._vertices = geometry['movement']['vertices']
+        self._segments = geometry['movement']['segments']
+        self.start_pattern_btn.setEnabled(True)
         self.status_panel.log_message(
             f"Loaded DXF: {os.path.basename(filename)}"
         )
+
+    def _on_start_pattern(self):
+        if not self._vertices:
+            return
+        speed = self.speed_input.value()
+        self.progress_label.setText("Pattern progress: 0%")
+        self.manager.execute_path(self._vertices, speed)
+
+    def _update_pattern_progress(self, index, pct, remaining):
+        self.position_canvas.draw_path_progress(index, self._vertices, self._segments)
+        self.progress_label.setText(
+            f"Pattern progress: {pct*100:.1f}% | {remaining:.1f}s remaining"
+        )
+
+    def _handle_pattern_completed(self):
+        self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
+        self.status_panel.log_message("Pattern completed")
 
     # ------------------------------------------------------------------
     # Qt events
