@@ -44,8 +44,20 @@ class CameraService(QObject):
     def stop(self) -> None:
         """Stop streaming and close the camera."""
         self._running = False
+
+        if self._cam:
+            try:
+                self._cam.stop_streaming()
+            except Exception:
+                pass
+            try:
+                self._cam._close()
+            except Exception:
+                pass
+            self._cam = None
+
         if self._thread:
-            self._thread.join()
+            self._thread.join(timeout=2)
             self._thread = None
 
     # ------------------------------------------------------------------
