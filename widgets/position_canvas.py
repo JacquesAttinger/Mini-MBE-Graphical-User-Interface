@@ -3,6 +3,7 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Circle
 from matplotlib.collections import LineCollection
 from PySide6.QtCore import Qt
+import logging
 
 class EnhancedPositionCanvas(FigureCanvas):
     def __init__(self, parent=None):
@@ -133,8 +134,8 @@ class EnhancedPositionCanvas(FigureCanvas):
             self.update_plot()
             
         except Exception as e:
-            print(f"Canvas DXF error: {str(e)}")
-            raise ValueError(f"Failed to display DXF: {str(e)}")
+            logging.error("Canvas DXF error: %s", e)
+            raise ValueError(f"Failed to display DXF: {e}")
         
         self.current_zoom = max(0.01, 2 * self._calculate_dxf_bounds(geometry))  # Auto-zoom to fit
         self.update_plot()
