@@ -1,5 +1,7 @@
 """Camera tab with live view and basic controls."""
 
+import math
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -44,13 +46,24 @@ class CameraTab(QWidget):
         self._service.frame_received.connect(self._view.update_image)
         self._service.error_occurred.connect(self._show_error)
         self._service.camera_ready.connect(self._apply_ranges)
-        self.exposure_slider.valueChanged.connect(self._service.set_exposure)
-        self.gain_slider.valueChanged.connect(self._service.set_gain)
 
     # ------------------------------------------------------------------
-    def _apply_ranges(self, exp_min: float, exp_max: float, gain_min: float, gain_max: float) -> None:
-        self.exposure_slider.setRange(int(exp_min), int(exp_max))
-        self.gain_slider.setRange(int(gain_min), int(gain_max))
+    def _apply_ranges(
+        self, exp_min: float, exp_max: float, gain_min: float, gain_max: float
+    ) -> None:
+        exp_min_i = math.ceil(exp_min)
+        exp_max_i = math.floor(exp_max)
+        gain_min_i = math.ceil(gain_min)
+        gain_max_i = math.floor(gain_max)
+
+        self.exposure_slider.setRange(exp_min_i, exp_max_i)
+        self.gain_slider.setRange(gain_min_i, gain_max_i)
+
+        self.exposure_slider.setValue(exp_min_i)
+        self.gain_slider.setValue(gain_min_i)
+
+        self.exposure_slider.valueChanged.connect(self._service.set_exposure)
+        self.gain_slider.valueChanged.connect(self._service.set_gain)
 
     # ------------------------------------------------------------------
     def _show_error(self, message: str) -> None:
