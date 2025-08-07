@@ -46,7 +46,7 @@ class CameraService(QObject):
         self._running = False
 
         if self._thread:
-            self._thread.join()
+            self._thread.join(timeout=2)
             self._thread = None
         self._cam = None
         self._exp_feat = None
