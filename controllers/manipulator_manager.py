@@ -2,11 +2,12 @@
 
 import threading
 import time
-from typing import Dict
+import math
+from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from controllers.smcd14_controller import ManipulatorController
+from controllers.smcd14_controller import ManipulatorController, calculate_velocity_components
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -27,6 +28,8 @@ class ManipulatorManager(QObject):
     position_updated = Signal(str, float)
     error_occurred = Signal(str, str)
     connection_changed = Signal(str, bool)
+    pattern_progress = Signal(int, float, float)  # index, percentage, remaining seconds
+    pattern_completed = Signal()
 
     def __init__(self,
                  host: str = HOST,
@@ -131,6 +134,76 @@ class ManipulatorManager(QObject):
             return f"{axis.upper()} homing procedure started"
 
         self._run_async(axis, action)
+
+    def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
+        """Execute a series of 3D vertices at constant speed."""
+
+        def worker():
+            try:
+                if not vertices:
+                    return
+                try:
+                    current_pos = (
+                        self.controllers['x'].read_position(),
+                        self.controllers['y'].read_position(),
+                        self.controllers['z'].read_position(),
+                    )
+                except Exception:
+                    current_pos = (0.0, 0.0, 0.0)
+
+                # Total distance for progress/time estimates
+                total_dist = 0.0
+                for i in range(1, len(vertices)):
+                    sx, sy, sz = vertices[i-1]
+                    ex, ey, ez = vertices[i]
+                    total_dist += math.sqrt((ex-sx)**2 + (ey-sy)**2 + (ez-sz)**2)
+
+                if speed > 0:
+                    self.pattern_progress.emit(0, 0.0, total_dist / speed)
+
+                # Move to first vertex
+                first = vertices[0]
+                vx, vy, vz = calculate_velocity_components(current_pos, first, speed)
+                self.controllers['x'].move_absolute(first[0], vx)
+                self.controllers['y'].move_absolute(first[1], vy)
+                self.controllers['z'].move_absolute(first[2], vz)
+                dist = math.sqrt(
+                    (first[0]-current_pos[0])**2 +
+                    (first[1]-current_pos[1])**2 +
+                    (first[2]-current_pos[2])**2
+                )
+                if speed > 0:
+                    time.sleep(dist / speed)
+                current_pos = first
+
+                elapsed = 0.0
+                for idx in range(1, len(vertices)):
+                    target = vertices[idx]
+                    vx, vy, vz = calculate_velocity_components(current_pos, target, speed)
+                    self.controllers['x'].move_absolute(target[0], vx)
+                    self.controllers['y'].move_absolute(target[1], vy)
+                    self.controllers['z'].move_absolute(target[2], vz)
+                    dist = math.sqrt(
+                        (target[0]-current_pos[0])**2 +
+                        (target[1]-current_pos[1])**2 +
+                        (target[2]-current_pos[2])**2
+                    )
+                    if speed > 0:
+                        time.sleep(dist / speed)
+                    elapsed += dist
+                    remaining = max(0.0, total_dist - elapsed)
+                    pct = elapsed / total_dist if total_dist else 1.0
+                    if speed > 0:
+                        self.pattern_progress.emit(idx, pct, remaining / speed)
+                    else:
+                        self.pattern_progress.emit(idx, pct, 0.0)
+                    current_pos = target
+
+                self.pattern_completed.emit()
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                self.error_occurred.emit("PATH", str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ------------------------------------------------------------------
     # Background monitoring

@@ -173,6 +173,7 @@ def parse_dxf(file_path, resolution=1.0, use_interpolation=True, force_mm=True):
             center_2d = (center[0] * scale, center[1] * scale)
             pts = generate_points_from_arc(center_2d, radius, start_angle, end_angle, resolution)
             paths.append(pts)
+    return paths
 
 def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, scale=1.0, mirror=False, z_height=0.0):
     """Returns standardized format with both display and movement data"""

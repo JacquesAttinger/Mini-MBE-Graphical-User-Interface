@@ -20,7 +20,9 @@ class EnhancedPositionCanvas(FigureCanvas):
         self.view_center = [0, 0]
         self.pan_start = None
         self.pan_sensitivity = 0.5
-        self._path_lines = {'completed': None, 'upcoming': None}
+        # store matplotlib line objects for rendered path segments
+        # use lists so progress drawing can safely clear them
+        self._path_lines = {'completed': [], 'upcoming': []}
         self._dxf_lines = []
         self._pos_text = None
 
@@ -205,11 +207,11 @@ class EnhancedPositionCanvas(FigureCanvas):
 
     def draw_path_progress(self, current_index, vertices, segment_boundaries):
         """Only connect points that were originally connected"""
-        if not hasattr(self, '_path_lines'):
-            self._path_lines = {'completed': [], 'upcoming': []}
-        
-        # Clear old lines
-        for line in self._path_lines['completed'] + self._path_lines['upcoming']:
+        completed = self._path_lines.get('completed') or []
+        upcoming = self._path_lines.get('upcoming') or []
+
+        # Clear previously drawn path segments
+        for line in completed + upcoming:
             if line in self.ax.lines:
                 line.remove()
         self._path_lines = {'completed': [], 'upcoming': []}
