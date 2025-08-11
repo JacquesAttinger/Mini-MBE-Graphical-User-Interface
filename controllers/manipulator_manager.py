@@ -142,6 +142,7 @@ class ManipulatorManager(QObject):
             try:
                 if not vertices:
                     return
+                disable_z = all(abs(v[2] - vertices[0][2]) < 1e-6 for v in vertices)
                 try:
                     current_pos = (
                         self.controllers['x'].read_position(),
@@ -166,7 +167,8 @@ class ManipulatorManager(QObject):
                 vx, vy, vz = calculate_velocity_components(current_pos, first, speed)
                 self.controllers['x'].move_absolute(first[0], vx)
                 self.controllers['y'].move_absolute(first[1], vy)
-                self.controllers['z'].move_absolute(first[2], vz)
+                if not disable_z:
+                    self.controllers['z'].move_absolute(first[2], vz)
                 dist = math.sqrt(
                     (first[0]-current_pos[0])**2 +
                     (first[1]-current_pos[1])**2 +
@@ -182,7 +184,8 @@ class ManipulatorManager(QObject):
                     vx, vy, vz = calculate_velocity_components(current_pos, target, speed)
                     self.controllers['x'].move_absolute(target[0], vx)
                     self.controllers['y'].move_absolute(target[1], vy)
-                    self.controllers['z'].move_absolute(target[2], vz)
+                    if not disable_z:
+                        self.controllers['z'].move_absolute(target[2], vz)
                     dist = math.sqrt(
                         (target[0]-current_pos[0])**2 +
                         (target[1]-current_pos[1])**2 +

@@ -173,7 +173,11 @@ class MainWindow(QMainWindow):
             self, "Select DXF File", "", "DXF Files (*.dxf)"
         )
         if filename:
-            self.dxf_service.load_dxf(filename, scale=1.0)
+            try:
+                z_pos = self.manager.controllers['z'].read_position()
+            except Exception:
+                z_pos = self._positions.get('z', 0.0)
+            self.dxf_service.load_dxf(filename, scale=1.0, z_height=z_pos)
 
     def _handle_dxf_loaded(self, filename, geometry):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)

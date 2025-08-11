@@ -12,15 +12,29 @@ class DxfService(QObject):
     dxf_loaded = Signal(str, object)
     error_occurred = Signal(str)
 
-    def load_dxf(self, filename: str, scale: float = 1.0):
-        """Load a DXF file in a background thread."""
+    def load_dxf(self, filename: str, scale: float = 1.0, z_height: float | None = None):
+        """Load a DXF file in a background thread.
+
+        Parameters
+        ----------
+        filename:
+            Path to the DXF file.
+        scale:
+            Scale factor applied to the parsed geometry.
+        z_height:
+            Constant Z height applied to all generated vertices.  If ``None`` is
+            provided the recipe will default to ``0.0``.  Callers should supply
+            the manipulator's current Z position to avoid unintended vertical
+            motion.
+        """
+
         def worker():
             try:
                 data = generate_recipe_from_dxf(
                     filename,
                     resolution=1.0,
                     scale=scale,
-                    z_height=0.0,
+                    z_height=z_height if z_height is not None else 0.0,
                 )
                 self.dxf_loaded.emit(filename, data)
             except Exception as exc:  # pragma: no cover - dependent on DXF file
