@@ -140,6 +140,65 @@ class ManipulatorManager(QObject):
 
         self._run_async(axis, action)
 
+    # ------------------------------------------------------------------
+    # High level composite moves
+    # ------------------------------------------------------------------
+    def _move_to(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> Tuple[bool, float]:
+        """Synchronously move all axes from ``start`` to ``target``.
+
+        Returns a tuple ``(ok, distance_mm)`` where ``ok`` indicates whether
+        all axes reported they reached the commanded position and
+        ``distance_mm`` is the travelled distance.
+        """
+
+        disable_z = abs(target[2] - start[2]) < 1e-6
+        vx, vy, vz = calculate_velocity_components(start, target, speed)
+
+        self.controllers['x'].move_absolute(target[0], vx)
+        self.controllers['y'].move_absolute(target[1], vy)
+        if not disable_z:
+            self.controllers['z'].move_absolute(target[2], vz)
+
+        wait_results = {
+            'x': self.controllers['x'].wait_until_in_position(),
+            'y': self.controllers['y'].wait_until_in_position(),
+        }
+        if not disable_z:
+            wait_results['z'] = self.controllers['z'].wait_until_in_position()
+
+        for axis, ok in wait_results.items():
+            if not ok:
+                self.error_occurred.emit(axis, "Failed to reach position")
+                return False, 0.0
+
+        dist = math.sqrt(
+            (target[0]-start[0])**2 +
+            (target[1]-start[1])**2 +
+            (target[2]-start[2])**2
+        )
+        return True, dist
+
+    def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:
+        """Move to a single 3D coordinate at the given speed."""
+
+        def worker():
+            try:
+                start = (
+                    self.controllers['x'].read_position(),
+                    self.controllers['y'].read_position(),
+                    self.controllers['z'].read_position(),
+                )
+            except Exception:
+                start = (0.0, 0.0, 0.0)
+
+            ok, _ = self._move_to(start, target, speed)
+            if ok:
+                self.status_updated.emit(
+                    f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
         """Execute a series of 3D vertices at constant speed."""
 
@@ -147,7 +206,6 @@ class ManipulatorManager(QObject):
             try:
                 if not vertices:
                     return
-                disable_z = all(abs(v[2] - vertices[0][2]) < 1e-6 for v in vertices)
                 try:
                     current_pos = (
                         self.controllers['x'].read_position(),
@@ -157,7 +215,6 @@ class ManipulatorManager(QObject):
                 except Exception:
                     current_pos = (0.0, 0.0, 0.0)
 
-                # Total distance for progress/time estimates
                 total_dist = 0.0
                 for i in range(1, len(vertices)):
                     sx, sy, sz = vertices[i-1]
@@ -167,53 +224,11 @@ class ManipulatorManager(QObject):
                 if speed > 0:
                     self.pattern_progress.emit(0, 0.0, total_dist / speed)
 
-                # Move to first vertex
-                first = vertices[0]
-                vx, vy, vz = calculate_velocity_components(current_pos, first, speed)
-                self.controllers['x'].move_absolute(first[0], vx)
-                self.controllers['y'].move_absolute(first[1], vy)
-                if not disable_z:
-                    self.controllers['z'].move_absolute(first[2], vz)
-                wait_results = {}
-                for axis in ('x', 'y'):
-                    wait_results[axis] = self.controllers[axis].wait_until_in_position()
-                if not disable_z:
-                    wait_results['z'] = self.controllers['z'].wait_until_in_position()
-                for axis, ok in wait_results.items():
-                    if not ok:
-                        self.error_occurred.emit(axis, "Failed to reach position")
-                        return
-                dist = math.sqrt(
-                    (first[0]-current_pos[0])**2 +
-                    (first[1]-current_pos[1])**2 +
-                    (first[2]-current_pos[2])**2
-                )
-                current_pos = first
-
                 elapsed = 0.0
-                for idx in range(1, len(vertices)):
-                    target = vertices[idx]
-                    vx, vy, vz = calculate_velocity_components(current_pos, target, speed)
-                    self.controllers['x'].move_absolute(target[0], vx)
-                    self.controllers['y'].move_absolute(target[1], vy)
-                    if not disable_z:
-                        self.controllers['z'].move_absolute(target[2], vz)
-
-                    wait_results = {}
-                    for axis in ('x', 'y'):
-                        wait_results[axis] = self.controllers[axis].wait_until_in_position()
-                    if not disable_z:
-                        wait_results['z'] = self.controllers['z'].wait_until_in_position()
-                    for axis, ok in wait_results.items():
-                        if not ok:
-                            self.error_occurred.emit(axis, "Failed to reach position")
-                            return
-
-                    dist = math.sqrt(
-                        (target[0]-current_pos[0])**2 +
-                        (target[1]-current_pos[1])**2 +
-                        (target[2]-current_pos[2])**2
-                    )
+                for idx, target in enumerate(vertices):
+                    ok, dist = self._move_to(current_pos, target, speed)
+                    if not ok:
+                        return
                     elapsed += dist
                     remaining = max(0.0, total_dist - elapsed)
                     pct = elapsed / total_dist if total_dist else 1.0
