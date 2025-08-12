@@ -374,6 +374,11 @@ class MainWindow(QMainWindow):
             self._positions["x"],
             self._positions["y"],
         )
+        self.status_panel.update_positions(
+            self._positions["x"],
+            self._positions["y"],
+            self._positions["z"],
+        )
         if previous is None or abs(position - previous) >= 0.01:
             self.status_panel.log_message(
                 f"{axis.upper()} position: {position:.3f} mm"
