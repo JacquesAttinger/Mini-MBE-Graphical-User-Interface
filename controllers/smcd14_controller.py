@@ -238,12 +238,29 @@ class ManipulatorController:
     def wait_until_in_position(self, timeout: float = 15.0) -> bool:
         self._check_connection()
         start_time = time.time()
-        while (time.time() - start_time) < timeout:
+        # Track movement so a long travel does not trigger a timeout while the
+        # axis is still progressing toward the target.
+        try:
+            last_pos = self.read_position()
+        except Exception:
+            last_pos = None
+        while True:
             status_val = self._read_status()
             if status_val & 16:
                 return True
+            try:
+                curr_pos = self.read_position()
+            except Exception:
+                curr_pos = None
+            if (
+                curr_pos is not None
+                and (last_pos is None or abs(curr_pos - last_pos) > 1e-4)
+            ):
+                last_pos = curr_pos
+                start_time = time.time()
+            if (time.time() - start_time) >= timeout:
+                return False
             time.sleep(0.5)
-        return False
 
     def read_position(self) -> float:
         self._check_connection()
