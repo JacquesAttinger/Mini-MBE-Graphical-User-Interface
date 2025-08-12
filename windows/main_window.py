@@ -12,13 +12,144 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QDoubleSpinBox,
     QLabel,
+    QDialog,
+    QTableWidget,
+    QTableWidgetItem,
 )
+from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
 
 from widgets.axis_control import AxisControlWidget
 from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
 from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
 
+from math import hypot
+
+class CoordinateCheckerDialog(QDialog):
+    """
+    Coordinate checker that tolerates various vertex formats:
+      - (x, y)
+      - (x, y, z, ...)
+      - {'x': x, 'y': y, ...}
+      - nested lists/tuples of any of the above
+    It projects everything to (x_mm, y_mm) in the original order.
+    """
+
+    def __init__(self, vertices, jump_warn_mm=0.5, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("DXF Coordinate Checker")
+        self.vertices, self._dropped = self._coerce_xy(vertices)
+        self.jump_warn_mm = float(jump_warn_mm)
+
+        layout = QVBoxLayout(self)
+
+        # Stats header
+        stats = self._stats_text(self.vertices, self._dropped)
+        self.stats_label = QLabel(stats)
+        self.stats_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.stats_label)
+
+        # Table of coordinates
+        self.table = QTableWidget(self)
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Index", "X (mm)", "Y (mm)", "Δ from prev (mm)"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        layout.addWidget(self.table)
+        self._populate_table()
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        self.accept_btn = QPushButton("Accept")
+        self.cancel_btn = QPushButton("Cancel")
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.accept_btn)
+        btn_row.addWidget(self.cancel_btn)
+        layout.addLayout(btn_row)
+
+        self.accept_btn.clicked.connect(self.accept)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        self.resize(700, 500)
+
+    # ---------- helpers ----------
+    def _coerce_xy(self, vertices):
+        """Return (xy_list, dropped_count). Accepts nested/heterogeneous inputs."""
+        xy = []
+        dropped = 0
+
+        def add_one(v):
+            nonlocal dropped
+            if v is None:
+                dropped += 1
+                return
+            # dict-like
+            if isinstance(v, dict):
+                if 'x' in v and 'y' in v:
+                    xy.append((float(v['x']), float(v['y'])))
+                elif 'X' in v and 'Y' in v:
+                    xy.append((float(v['X']), float(v['Y'])))
+                else:
+                    dropped += 1
+                return
+            # list/tuple
+            if isinstance(v, (list, tuple)):
+                if v and isinstance(v[0], (list, tuple, dict)):
+                    for sub in v:
+                        add_one(sub)
+                elif len(v) >= 2:
+                    try:
+                        xy.append((float(v[0]), float(v[1])))
+                    except Exception:
+                        dropped += 1
+                else:
+                    dropped += 1
+                return
+            # anything else
+            dropped += 1
+
+        # top-level may already be a path list or a flat list
+        add_one(vertices) if isinstance(vertices, (list, tuple)) and vertices and isinstance(vertices[0], (list, tuple, dict)) else None
+        if not xy:
+            # treat as flat sequence
+            for v in (vertices if isinstance(vertices, (list, tuple)) else [vertices]):
+                add_one(v)
+
+        return xy, dropped
+
+    def _populate_table(self):
+        vs = self.vertices
+        self.table.setRowCount(len(vs))
+        prev = None
+        for i, (x, y) in enumerate(vs):
+            self.table.setItem(i, 0, QTableWidgetItem(str(i)))
+            self.table.setItem(i, 1, QTableWidgetItem(f"{x:.6f}"))
+            self.table.setItem(i, 2, QTableWidgetItem(f"{y:.6f}"))
+            d = 0.0 if prev is None else hypot(x - prev[0], y - prev[1])
+            itm = QTableWidgetItem(f"{d:.6f}")
+            if d >= self.jump_warn_mm and i > 0:
+                itm.setBackground(QColor(255, 230, 200))  # highlight big jumps
+            self.table.setItem(i, 3, itm)
+            prev = (x, y)
+        self.table.resizeColumnsToContents()
+
+    @staticmethod
+    def _stats_text(vertices, dropped):
+        if not vertices:
+            return "No vertices."
+        xs = [p[0] for p in vertices]
+        ys = [p[1] for p in vertices]
+        minx, maxx = min(xs), max(xs)
+        miny, maxy = min(ys), max(ys)
+        w = maxx - minx
+        h = maxy - miny
+        dropped_txt = f"   |   Dropped: {dropped}" if dropped else ""
+        return (f"Vertices: {len(vertices)}{dropped_txt}    "
+                f"BBox (mm): [{minx:.3f}, {miny:.3f}] – [{maxx:.3f}, {maxy:.3f}]    "
+                f"Size: {w:.3f} × {h:.3f} mm    "
+                f"Units assumed: mm")
 
 class MainWindow(QMainWindow):
     """Top-level window coordinating UI widgets with backend services."""
@@ -29,8 +160,8 @@ class MainWindow(QMainWindow):
         self.dxf_service = dxf_service
         self.controllers = manager.controllers
         self._positions = {"x": 0.0, "y": 0.0, "z": 0.0}
-        self._vertices = []
-        self._segments = []
+        self._vertices = []   # list[(x_mm, y_mm)]
+        self._segments = []   # whatever your service provides; kept for canvas drawing
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -177,16 +308,47 @@ class MainWindow(QMainWindow):
                 z_pos = self.manager.controllers['z'].read_position()
             except Exception:
                 z_pos = self._positions.get('z', 0.0)
+            # Let the existing service parse & build geometry
             self.dxf_service.load_dxf(filename, scale=1.0, z_height=z_pos)
 
     def _handle_dxf_loaded(self, filename, geometry):
+        """
+        Called by the DXF service when a file has been parsed.
+        We immediately present a Coordinate Checker so the user can confirm
+        the exact vertices that will be executed before enabling 'Start Pattern'.
+        """
+        # Keep your original canvas update
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
-        self._vertices = geometry['movement']['vertices']
-        self._segments = geometry['movement']['segments']
-        self.start_pattern_btn.setEnabled(True)
-        self.status_panel.log_message(
-            f"Loaded DXF: {os.path.basename(filename)}"
-        )
+
+        # Extract vertices/segments from service geometry
+        self._vertices = geometry['movement']['vertices'] or []
+        self._segments = geometry['movement'].get('segments', [])
+
+        # Show coordinate checker
+        if not self._vertices:
+            self.start_pattern_btn.setEnabled(False)
+            self.status_panel.log_message("DXF loaded, but no vertices found.")
+            QMessageBox.warning(self, "Coordinate Checker", "No drawable vertices found.")
+            return
+
+        checker = CoordinateCheckerDialog(self._vertices, jump_warn_mm=0.5, parent=self)
+        result = checker.exec()
+
+        if result == QDialog.Accepted:
+            self.start_pattern_btn.setEnabled(True)
+            self.status_panel.log_message(
+                f"Loaded DXF: {os.path.basename(filename)} | "
+                f"Vertices: {len(self._vertices)}"
+            )
+            # Echo first few vertices to the log for quick glance
+            preview = ", ".join([f"({x:.3f},{y:.3f})" for x, y in self._vertices[:5]])
+            self.status_panel.log_message(f"First points: {preview}{' ...' if len(self._vertices) > 5 else ''}")
+        else:
+            # User rejected after seeing a problem
+            self.start_pattern_btn.setEnabled(False)
+            self.status_panel.log_message(
+                "DXF rejected by user after coordinate check."
+            )
 
     def _on_start_pattern(self):
         if not self._vertices:
@@ -211,4 +373,3 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):  # pragma: no cover - GUI callback
         self.manager.disconnect_all()
         super().closeEvent(event)
-
