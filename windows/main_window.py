@@ -163,8 +163,10 @@ class MainWindow(QMainWindow):
         self.dxf_service = dxf_service
         self.controllers = manager.controllers
         self._positions = {"x": 0.0, "y": 0.0, "z": 0.0}
-        self._vertices = []   # list[(x_mm, y_mm)]
-        self._segments = []   # whatever your service provides; kept for canvas drawing
+        # Store both 3D vertices for motion and 2D vertices for display/checks
+        self._vertices = []      # list[(x_mm, y_mm, z_mm)] used for execution
+        self._vertices_xy = []   # list[(x_mm, y_mm)] for plotting and preflight
+        self._segments = []      # whatever your service provides; kept for canvas drawing
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -393,19 +395,23 @@ class MainWindow(QMainWindow):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
 
         raw_vertices = geometry['movement']['vertices'] or []
-        # Ensure we draw the last edge by closing the path
-        self._vertices = self._sanitize_vertices(raw_vertices, eps=1e-6, close_path=True)
+        # Determine Z height; recipes currently keep a constant Z
+        z_val = raw_vertices[0][2] if raw_vertices and len(raw_vertices[0]) > 2 else 0.0
+
+        # Clean path for display/preflight (2D) and build 3D path for motion
+        self._vertices_xy = self._sanitize_vertices(raw_vertices, eps=1e-6, close_path=True)
+        self._vertices = [(x, y, z_val) for x, y in self._vertices_xy]
         self._segments = geometry['movement'].get('segments', [])
 
-        if not self._vertices:
+        if not self._vertices_xy:
             self.start_pattern_btn.setEnabled(False)
             self.status_panel.log_message("DXF loaded, but no vertices found.")
             QMessageBox.warning(self, "Coordinate Checker", "No drawable vertices found.")
             return
 
-        checker = CoordinateCheckerDialog(self._vertices, jump_warn_mm=0.5, parent=self)
+        checker = CoordinateCheckerDialog(self._vertices_xy, jump_warn_mm=0.5, parent=self)
         if checker.exec() == QDialog.Accepted:
-            issues = self._preflight_path(self._vertices, max_jump_mm=2.0)
+            issues = self._preflight_path(self._vertices_xy, max_jump_mm=2.0)
             if issues:
                 msg = "\n".join([f"{i}->{j}: {d:.3f} mm" for (i, j, d) in issues[:8]])
                 proceed = QMessageBox.question(
@@ -421,7 +427,7 @@ class MainWindow(QMainWindow):
 
             self.start_pattern_btn.setEnabled(True)
             self.status_panel.log_message(
-                f"Loaded DXF: {os.path.basename(filename)} | Vertices (clean/closed): {len(self._vertices)}"
+                f"Loaded DXF: {os.path.basename(filename)} | Vertices (clean/closed): {len(self._vertices_xy)}"
             )
         else:
             self.start_pattern_btn.setEnabled(False)
@@ -452,7 +458,7 @@ class MainWindow(QMainWindow):
             self._handle_error("PATH", str(exc))
 
     def _update_pattern_progress(self, index, pct, remaining):
-        self.position_canvas.draw_path_progress(index, self._vertices, self._segments)
+        self.position_canvas.draw_path_progress(index, self._vertices_xy, self._segments)
         self.progress_label.setText(
             f"Pattern progress: {pct*100:.1f}% | {remaining:.1f}s remaining"
         )
