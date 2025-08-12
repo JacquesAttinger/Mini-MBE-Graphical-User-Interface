@@ -174,10 +174,15 @@ class ManipulatorManager(QObject):
                 self.controllers['y'].move_absolute(first[1], vy)
                 if not disable_z:
                     self.controllers['z'].move_absolute(first[2], vz)
+                wait_results = {}
                 for axis in ('x', 'y'):
-                    self.controllers[axis].wait_until_in_position()
+                    wait_results[axis] = self.controllers[axis].wait_until_in_position()
                 if not disable_z:
-                    self.controllers['z'].wait_until_in_position()
+                    wait_results['z'] = self.controllers['z'].wait_until_in_position()
+                for axis, ok in wait_results.items():
+                    if not ok:
+                        self.error_occurred.emit(axis, "Failed to reach position")
+                        return
                 dist = math.sqrt(
                     (first[0]-current_pos[0])**2 +
                     (first[1]-current_pos[1])**2 +
@@ -194,10 +199,15 @@ class ManipulatorManager(QObject):
                     if not disable_z:
                         self.controllers['z'].move_absolute(target[2], vz)
 
+                    wait_results = {}
                     for axis in ('x', 'y'):
-                        self.controllers[axis].wait_until_in_position()
+                        wait_results[axis] = self.controllers[axis].wait_until_in_position()
                     if not disable_z:
-                        self.controllers['z'].wait_until_in_position()
+                        wait_results['z'] = self.controllers['z'].wait_until_in_position()
+                    for axis, ok in wait_results.items():
+                        if not ok:
+                            self.error_occurred.emit(axis, "Failed to reach position")
+                            return
 
                     dist = math.sqrt(
                         (target[0]-current_pos[0])**2 +
