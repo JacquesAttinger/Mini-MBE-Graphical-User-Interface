@@ -194,16 +194,15 @@ def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, 
             y *= scale
             if mirror:
                 x = -x
-            
+
             display_path.append((x, y))
             movement_path.append((x, y, z_height))
-            
-            # Mark segment boundaries (end of each original line)
-            if i > 0:
-                segment_boundaries.append(len(movement_vertices)-1)
-        
+
         display_paths.append(display_path)
         movement_vertices.extend(movement_path)
+
+        # Mark segment boundary at the end of each path
+        segment_boundaries.append(len(movement_vertices) - 1)
     
     return {
         'display': {
