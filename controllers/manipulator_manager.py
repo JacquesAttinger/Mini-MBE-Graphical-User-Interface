@@ -62,6 +62,11 @@ class ManipulatorManager(QObject):
                 if connected:
                     any_connected = True
                     self.status_updated.emit(f"{axis.upper()} axis connected")
+                    try:
+                        ctrl.set_backlash(0.0)
+                    except Exception:
+                        # Best effort: backlash configuration is optional
+                        pass
             except Exception as exc:  # pragma: no cover - hardware dependent
                 status[axis] = False
                 self.error_occurred.emit(axis, str(exc))
@@ -169,13 +174,15 @@ class ManipulatorManager(QObject):
                 self.controllers['y'].move_absolute(first[1], vy)
                 if not disable_z:
                     self.controllers['z'].move_absolute(first[2], vz)
+                for axis in ('x', 'y'):
+                    self.controllers[axis].wait_until_in_position()
+                if not disable_z:
+                    self.controllers['z'].wait_until_in_position()
                 dist = math.sqrt(
                     (first[0]-current_pos[0])**2 +
                     (first[1]-current_pos[1])**2 +
                     (first[2]-current_pos[2])**2
                 )
-                if speed > 0:
-                    time.sleep(dist / speed)
                 current_pos = first
 
                 elapsed = 0.0
@@ -186,13 +193,17 @@ class ManipulatorManager(QObject):
                     self.controllers['y'].move_absolute(target[1], vy)
                     if not disable_z:
                         self.controllers['z'].move_absolute(target[2], vz)
+
+                    for axis in ('x', 'y'):
+                        self.controllers[axis].wait_until_in_position()
+                    if not disable_z:
+                        self.controllers['z'].wait_until_in_position()
+
                     dist = math.sqrt(
                         (target[0]-current_pos[0])**2 +
                         (target[1]-current_pos[1])**2 +
                         (target[2]-current_pos[2])**2
                     )
-                    if speed > 0:
-                        time.sleep(dist / speed)
                     elapsed += dist
                     remaining = max(0.0, total_dist - elapsed)
                     pct = elapsed / total_dist if total_dist else 1.0
