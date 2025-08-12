@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from controllers.smcd14_controller import ManipulatorController, calculate_velocity_components
+from controllers.smcd14_controller import ManipulatorController
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -146,19 +146,28 @@ class ManipulatorManager(QObject):
     def _move_to(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> Tuple[bool, float]:
         """Synchronously move all axes from ``start`` to ``target``.
 
-        Returns a tuple ``(ok, distance_mm)`` where ``ok`` indicates whether
-        all axes reported they reached the commanded position and
-        ``distance_mm`` is the travelled distance.
+        This simplified implementation issues a single absolute move command to
+        each axis using the provided ``speed`` value.  After commanding the move
+        it waits for all axes to report they are in position.  No per-axis
+        velocity calculations are performed which ensures straightforward,
+        sequential motion for each coordinate in a path.
+
+        Returns a tuple ``(ok, distance_mm)`` where ``ok`` indicates whether all
+        axes reported they reached the commanded position and ``distance_mm`` is
+        the travelled distance.
         """
 
         disable_z = abs(target[2] - start[2]) < 1e-6
-        vx, vy, vz = calculate_velocity_components(start, target, speed)
 
-        self.controllers['x'].move_absolute(target[0], vx)
-        self.controllers['y'].move_absolute(target[1], vy)
+        # Command each axis to the target position.  All axes use the same speed
+        # value to keep behaviour predictable.
+        self.controllers['x'].move_absolute(target[0], speed)
+        self.controllers['y'].move_absolute(target[1], speed)
         if not disable_z:
-            self.controllers['z'].move_absolute(target[2], vz)
+            self.controllers['z'].move_absolute(target[2], speed)
 
+        # Wait for the axes to finish the move before proceeding.  If any axis
+        # fails, surface the error and abort the current operation.
         wait_results = {
             'x': self.controllers['x'].wait_until_in_position(),
             'y': self.controllers['y'].wait_until_in_position(),
@@ -172,9 +181,9 @@ class ManipulatorManager(QObject):
                 return False, 0.0
 
         dist = math.sqrt(
-            (target[0]-start[0])**2 +
-            (target[1]-start[1])**2 +
-            (target[2]-start[2])**2
+            (target[0] - start[0]) ** 2 +
+            (target[1] - start[1]) ** 2 +
+            (target[2] - start[2]) ** 2
         )
         return True, dist
 
