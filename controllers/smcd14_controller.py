@@ -278,6 +278,7 @@ class ManipulatorController:
         return regs[0]
 
     def _read_registers(self, address: int, count: int) -> list:
+        self._check_connection()
         with self._lock:
             res = self.client.read_holding_registers(address=address, count=count, slave=self.slave_id)
             if res.isError():

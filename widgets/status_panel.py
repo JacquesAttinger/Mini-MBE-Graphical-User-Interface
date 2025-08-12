@@ -1,4 +1,11 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLabel, QScrollArea
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QTextEdit,
+    QLabel,
+    QScrollArea,
+    QHBoxLayout,
+)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
@@ -31,13 +38,18 @@ class StatusPanel(QWidget):
         scroll.setWidget(self.text_area)
         layout.addWidget(scroll)
         
-        # Connection status indicator
+        # Connection status and position indicators
+        bottom = QHBoxLayout()
         self.connection_status = QLabel("Disconnected")
-        self.connection_status.setAlignment(Qt.AlignRight)
         self.connection_status.setStyleSheet(
             "font-weight: bold; color: #d9534f; font-size: 10pt;"
         )
-        layout.addWidget(self.connection_status)
+        self.position_label = QLabel("X: 0.000  Y: 0.000  Z: 0.000")
+        self.position_label.setAlignment(Qt.AlignRight)
+        bottom.addWidget(self.connection_status)
+        bottom.addStretch()
+        bottom.addWidget(self.position_label)
+        layout.addLayout(bottom)
         
         self.setLayout(layout)
     
@@ -61,3 +73,9 @@ class StatusPanel(QWidget):
             self.connection_status.setStyleSheet(
                 "font-weight: bold; color: #d9534f; font-size: 10pt;"
             )
+
+    def update_positions(self, x: float, y: float, z: float):
+        """Update position readout"""
+        self.position_label.setText(
+            f"X: {x:.3f}  Y: {y:.3f}  Z: {z:.3f}"
+        )

@@ -151,6 +151,9 @@ class CoordinateCheckerDialog(QDialog):
                 f"Size: {w:.3f} × {h:.3f} mm    "
                 f"Units assumed: mm")
 
+def _almost_equal(a, b, eps=1e-6):
+    return hypot(a[0]-b[0], a[1]-b[1]) <= eps
+
 class MainWindow(QMainWindow):
     """Top-level window coordinating UI widgets with backend services."""
 
@@ -166,6 +169,81 @@ class MainWindow(QMainWindow):
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
 
+    # --- helpers -------------------------------------------------------
+    def _sanitize_vertices(self, verts, eps=1e-6, close_path=True):
+        """
+        1) Coerce to (x, y)
+        2) Drop consecutive duplicates
+        3) Optionally append first vertex to close the loop
+        4) Remove true backtracks A->B->A, but DO NOT remove the final 'A' if it closes the loop
+        """
+        # 1) coerce
+        coerced = []
+        for v in verts or []:
+            if isinstance(v, dict):
+                x = float(v.get("x", v.get("X")))
+                y = float(v.get("y", v.get("Y")))
+            else:
+                x, y = float(v[0]), float(v[1])
+            coerced.append((x, y))
+        if not coerced:
+            return []
+
+        # 2) drop consecutive duplicates
+        dedup = []
+        for p in coerced:
+            if not dedup or not _almost_equal(dedup[-1], p, eps):
+                dedup.append(p)
+
+        # 3) close the loop if requested
+        if close_path and not _almost_equal(dedup[0], dedup[-1], eps):
+            dedup.append(dedup[0])
+
+        # 4) remove true backtracks A->B->A, but preserve final closing vertex
+        cleaned = []
+        for idx, p in enumerate(dedup):
+            if len(cleaned) >= 2 and _almost_equal(cleaned[-2], p, eps):
+                is_final_closing = (idx == len(dedup) - 1) and _almost_equal(p, dedup[0], eps)
+                if not is_final_closing:
+                    # pattern A,B,A -> drop B and skip this A
+                    cleaned.pop()
+                    continue
+            cleaned.append(p)
+
+        return cleaned
+
+    def _preflight_path(self, verts, max_jump_mm=2.0):
+        issues = []
+        for i in range(1, len(verts)):
+            d = hypot(verts[i][0]-verts[i-1][0], verts[i][1]-verts[i-1][1])
+            if d > max_jump_mm:
+                issues.append((i-1, i, d))
+        return issues
+
+    def _preflight_path(self, verts, max_jump_mm=2.0):
+        """Return list of (i-1, i, distance_mm) for big jumps."""
+        issues = []
+        for i in range(1, len(verts)):
+            d = hypot(verts[i][0]-verts[i-1][0], verts[i][1]-verts[i-1][1])
+            if d > max_jump_mm:
+                issues.append((i-1, i, d))
+        return issues
+
+    def _ensure_connected(self):
+        """Make sure all axes have an active Modbus client before starting."""
+        missing = []
+        for axis, ctrl in self.manager.controllers.items():
+            if getattr(ctrl, "client", None) is None:
+                missing.append(axis.upper())
+        if missing:
+            QMessageBox.critical(
+                self, "Connection Error",
+                f"The following axes are not connected: {', '.join(missing)}.\n"
+                "Connect before starting a pattern."
+            )
+            return False
+        return True
+    
     # ------------------------------------------------------------------
     # UI setup
     # ------------------------------------------------------------------
@@ -312,19 +390,13 @@ class MainWindow(QMainWindow):
             self.dxf_service.load_dxf(filename, scale=1.0, z_height=z_pos)
 
     def _handle_dxf_loaded(self, filename, geometry):
-        """
-        Called by the DXF service when a file has been parsed.
-        We immediately present a Coordinate Checker so the user can confirm
-        the exact vertices that will be executed before enabling 'Start Pattern'.
-        """
-        # Keep your original canvas update
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
 
-        # Extract vertices/segments from service geometry
-        self._vertices = geometry['movement']['vertices'] or []
+        raw_vertices = geometry['movement']['vertices'] or []
+        # Ensure we draw the last edge by closing the path
+        self._vertices = self._sanitize_vertices(raw_vertices, eps=1e-6, close_path=True)
         self._segments = geometry['movement'].get('segments', [])
 
-        # Show coordinate checker
         if not self._vertices:
             self.start_pattern_btn.setEnabled(False)
             self.status_panel.log_message("DXF loaded, but no vertices found.")
@@ -332,30 +404,52 @@ class MainWindow(QMainWindow):
             return
 
         checker = CoordinateCheckerDialog(self._vertices, jump_warn_mm=0.5, parent=self)
-        result = checker.exec()
+        if checker.exec() == QDialog.Accepted:
+            issues = self._preflight_path(self._vertices, max_jump_mm=2.0)
+            if issues:
+                msg = "\n".join([f"{i}->{j}: {d:.3f} mm" for (i, j, d) in issues[:8]])
+                proceed = QMessageBox.question(
+                    self, "Large Jumps Detected",
+                    "Found large moves in the path:\n"
+                    f"{msg}\n\nProceed anyway?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if proceed != QMessageBox.Yes:
+                    self.start_pattern_btn.setEnabled(False)
+                    self.status_panel.log_message("DXF rejected due to large jumps.")
+                    return
 
-        if result == QDialog.Accepted:
             self.start_pattern_btn.setEnabled(True)
             self.status_panel.log_message(
-                f"Loaded DXF: {os.path.basename(filename)} | "
-                f"Vertices: {len(self._vertices)}"
+                f"Loaded DXF: {os.path.basename(filename)} | Vertices (clean/closed): {len(self._vertices)}"
             )
-            # Echo first few vertices to the log for quick glance
-            preview = ", ".join([f"({x:.3f},{y:.3f})" for x, y in self._vertices[:5]])
-            self.status_panel.log_message(f"First points: {preview}{' ...' if len(self._vertices) > 5 else ''}")
         else:
-            # User rejected after seeing a problem
             self.start_pattern_btn.setEnabled(False)
-            self.status_panel.log_message(
-                "DXF rejected by user after coordinate check."
-            )
+            self.status_panel.log_message("DXF rejected by user after coordinate check.")
 
     def _on_start_pattern(self):
         if not self._vertices:
             return
-        speed = self.speed_input.value()
+        if not self._ensure_connected():
+            return
+
+        # Disable to prevent double-starts; reset UI
+        self.start_pattern_btn.setEnabled(False)
         self.progress_label.setText("Pattern progress: 0%")
-        self.manager.execute_path(self._vertices, speed)
+
+        speed = self.speed_input.value()
+
+        # If your manager has a reset/init for path state, call it here:
+        if hasattr(self.manager, "reset_path_state"):
+            self.manager.reset_path_state()
+
+        # Kick off execution
+        try:
+            self.manager.execute_path(self._vertices, speed)
+        except Exception as exc:
+            # Surface any exceptions cleanly
+            self.start_pattern_btn.setEnabled(True)
+            self._handle_error("PATH", str(exc))
 
     def _update_pattern_progress(self, index, pct, remaining):
         self.position_canvas.draw_path_progress(index, self._vertices, self._segments)
@@ -366,6 +460,7 @@ class MainWindow(QMainWindow):
     def _handle_pattern_completed(self):
         self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
         self.status_panel.log_message("Pattern completed")
+        self.start_pattern_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Qt events

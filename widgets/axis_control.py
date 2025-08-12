@@ -29,14 +29,16 @@ class AxisControlWidget(QGroupBox):
         vel_layout = QHBoxLayout()
         vel_layout.addWidget(QLabel("Velocity (mm/s):"))
         self.vel_spin = QDoubleSpinBox()
-        self.vel_spin.setRange(0.1, 100)
-        self.vel_spin.setValue(10)
+        self.vel_spin.setRange(0.0001, 10)
+        self.vel_spin.setValue(0.1)
         vel_layout.addWidget(self.vel_spin)
         
         # Buttons
         btn_layout = QHBoxLayout()
         self.move_btn = QPushButton("Move")
+        self.move_btn.setStyleSheet("background-color: #5cb85c; color: white;")
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setStyleSheet("background-color: #d9534f; color: white;")
         self.home_btn = QPushButton("Home")
         
         btn_layout.addWidget(self.move_btn)
