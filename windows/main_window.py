@@ -26,6 +26,10 @@ from widgets.camera_tab import CameraTab
 
 from math import hypot
 
+# Manipulator workspace bounds in millimeters
+X_MIN_MM, X_MAX_MM = -50.0, 50.0
+Y_MIN_MM, Y_MAX_MM = -50.0, 50.0
+
 class CoordinateCheckerDialog(QDialog):
     """
     Coordinate checker that tolerates various vertex formats:
@@ -407,6 +411,26 @@ class MainWindow(QMainWindow):
             self.start_pattern_btn.setEnabled(False)
             self.status_panel.log_message("DXF loaded, but no vertices found.")
             QMessageBox.warning(self, "Coordinate Checker", "No drawable vertices found.")
+            return
+
+        # Check workspace bounds
+        oob = [
+            (x, y) for x, y in self._vertices_xy
+            if not (X_MIN_MM <= x <= X_MAX_MM and Y_MIN_MM <= y <= Y_MAX_MM)
+        ]
+        if oob:
+            self.start_pattern_btn.setEnabled(False)
+            self.status_panel.log_message("DXF rejected due to out-of-bounds vertices.")
+            first_x, first_y = oob[0]
+            QMessageBox.warning(
+                self,
+                "Coordinate Checker",
+                (
+                    "Pattern contains vertices outside manipulator bounds\n"
+                    f"X: [{X_MIN_MM}, {X_MAX_MM}] mm, Y: [{Y_MIN_MM}, {Y_MAX_MM}] mm.\n"
+                    f"First offending vertex: ({first_x:.3f}, {first_y:.3f})"
+                ),
+            )
             return
 
         checker = CoordinateCheckerDialog(self._vertices_xy, jump_warn_mm=0.5, parent=self)
