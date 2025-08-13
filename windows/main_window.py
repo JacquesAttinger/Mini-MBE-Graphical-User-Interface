@@ -23,6 +23,7 @@ from widgets.axis_control import AxisControlWidget
 from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
 from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
+from widgets.modbus_panel import ModbusPanel
 
 from math import hypot
 
@@ -350,7 +351,9 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.status_panel)
 
         main_layout.addWidget(left_panel)
-        main_layout.addWidget(right_panel, stretch=1)
+        main_layout.addWidget(right_panel, stretch=3)
+        self.modbus_panel = ModbusPanel()
+        main_layout.addWidget(self.modbus_panel, stretch=1)
 
         # ------------------------------------------------------------------
         # Camera tab
@@ -369,6 +372,8 @@ class MainWindow(QMainWindow):
         self.manager.position_updated.connect(self._handle_position_update)
         self.manager.error_occurred.connect(self._handle_error)
         self.manager.connection_changed.connect(self._handle_connection_change)
+        self.manager.modbus_event.connect(self.modbus_panel.log_event)
+        self.manager.error_occurred.connect(self.modbus_panel.log_error)
 
         self.load_dxf_btn.clicked.connect(self._on_load_dxf)
         self.dxf_service.dxf_loaded.connect(self._handle_dxf_loaded)
