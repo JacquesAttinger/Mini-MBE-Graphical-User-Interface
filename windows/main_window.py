@@ -580,16 +580,28 @@ class MainWindow(QMainWindow):
         )
 
     def _handle_pattern_completed(self):
-        if getattr(self, "_closing_leg", None) is not None:
-            self.manager.move_to_point(self._closing_leg, getattr(self, "_closing_speed", 0.0))
-            self._closing_leg = None
         self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
-        self.status_panel.log_message("Pattern completed")
-        self.start_pattern_btn.setEnabled(True)
-        self.pause_pattern_btn.setEnabled(False)
-        self.pause_pattern_btn.setText("Pause Pattern")
-        if self.modbus_panel.auto_logging_active:
-            self.modbus_panel.stop_log()
+
+        def _finalize():
+            self.status_panel.log_message("Pattern completed")
+            self.start_pattern_btn.setEnabled(True)
+            self.pause_pattern_btn.setEnabled(False)
+            self.pause_pattern_btn.setText("Pause Pattern")
+            if self.modbus_panel.auto_logging_active:
+                self.modbus_panel.stop_log()
+            try:
+                self.manager.point_reached.disconnect(_finalize)
+            except TypeError:
+                pass
+
+        if getattr(self, "_closing_leg", None) is not None:
+            self.manager.point_reached.connect(_finalize)
+            self.manager.move_to_point(
+                self._closing_leg, getattr(self, "_closing_speed", 0.0)
+            )
+            self._closing_leg = None
+        else:
+            _finalize()
 
     # ------------------------------------------------------------------
     # Qt events
