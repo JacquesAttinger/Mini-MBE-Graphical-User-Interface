@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QScrollArea,
+    QCheckBox,
 )
 
 
@@ -60,6 +61,21 @@ class ModbusPanel(QWidget):
         self.save_btn.clicked.connect(self._save_log)
         layout.addWidget(self.save_btn)
 
+        # Filter which actions are recorded
+        self._action_enabled: dict[str, bool] = {cmd: True for cmd in self.COMMANDS}
+        filter_group = QGroupBox("Recorded Actions")
+        filter_layout = QVBoxLayout(filter_group)
+        for cmd in self.COMMANDS:
+            cb = QCheckBox(cmd)
+            cb.setChecked(True)
+            cb.stateChanged.connect(
+                lambda state, c=cmd: self._action_enabled.__setitem__(
+                    c, state == Qt.Checked
+                )
+            )
+            filter_layout.addWidget(cb)
+        layout.addWidget(filter_group)
+
         # Container for command boxes grouped by axis
         self._boxes: dict[str, dict[str, _CommandBox]] = {}
 
@@ -82,6 +98,11 @@ class ModbusPanel(QWidget):
 
     # ------------------------------------------------------------------
     def log_event(self, axis: str, action: str, description: str, raw: str) -> None:
+        boxes = self._ensure_axis(axis)
+        if action in boxes:
+            boxes[action].update_content(description, raw)
+        if not self._action_enabled.get(action, True):
+            return
         entry = {
             "time": datetime.datetime.now().isoformat(),
             "axis": axis,
@@ -90,9 +111,6 @@ class ModbusPanel(QWidget):
             "raw": raw,
         }
         self._log.append(entry)
-        boxes = self._ensure_axis(axis)
-        if action in boxes:
-            boxes[action].update_content(description, raw)
 
     def log_error(self, axis: str, message: str) -> None:
         entry = {
@@ -129,6 +147,11 @@ class ModbusPanel(QWidget):
         )
         if not path:
             return
+        data = [
+            e
+            for e in self._log
+            if e.get("action") is None or self._action_enabled.get(e.get("action"), True)
+        ]
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self._log, fh, indent=2)
+            json.dump(data, fh, indent=2)
 
