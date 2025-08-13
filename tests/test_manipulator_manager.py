@@ -41,3 +41,18 @@ def test_cross_origin_move_uses_signed_velocity():
     target = (-1.0, 0.0, 0.0)
     assert mgr._move_axes(start, target, 0.5)
     assert mgr.controllers['x']._last_velocity < 0
+
+
+def test_small_delta_uses_full_speed():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    mgr.controllers = {
+        'x': DummyCtrl(0.0),
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+    start = (0.0, 0.0, 0.0)
+    target = (0.1, 100.0, 0.0)
+    assert mgr._move_axes(start, target, 0.01)
+    assert mgr.controllers['x']._last_velocity == pytest.approx(0.01)
+    assert mgr.controllers['y']._last_velocity == pytest.approx(0.01)
