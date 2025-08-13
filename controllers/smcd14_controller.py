@@ -186,6 +186,11 @@ class ManipulatorController:
             res = self.client.write_register(address=MOTOR_ON_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to turn motor on.")
+            self._log(
+                "motor_on",
+                "Motor ON",
+                f"{MOTOR_ON_ADDR}=1",
+            )
 
     def motor_off(self) -> None:
         self._check_connection()
@@ -193,6 +198,11 @@ class ManipulatorController:
             res = self.client.write_register(address=MOTOR_ON_ADDR, value=0, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to turn motor off.")
+            self._log(
+                "motor_off",
+                "Motor OFF",
+                f"{MOTOR_ON_ADDR}=0",
+            )
 
     def move_absolute(self, position: float, velocity: float) -> None:
         self._check_connection()
