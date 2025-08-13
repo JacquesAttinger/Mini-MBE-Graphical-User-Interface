@@ -428,6 +428,8 @@ class MainWindow(QMainWindow):
     def _handle_error(self, axis, message):
         self.status_panel.log_message(f"{axis} ERROR: {message}")
         QMessageBox.critical(self, f"{axis} Error", message)
+        if self.modbus_panel.auto_logging_active:
+            self.modbus_panel.stop_log()
 
     def _on_load_dxf(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -527,6 +529,9 @@ class MainWindow(QMainWindow):
 
         first = self._vertices[0]
 
+        if not self.modbus_panel.logging_active:
+            self.modbus_panel.start_log(auto=True)
+
         def _after_start(_target):
             self.manager.point_reached.disconnect(_after_start)
             reply = QMessageBox.question(
@@ -548,6 +553,8 @@ class MainWindow(QMainWindow):
                 self.start_pattern_btn.setEnabled(True)
                 self.pause_pattern_btn.setEnabled(False)
                 self.status_panel.log_message("Pattern start cancelled")
+                if self.modbus_panel.auto_logging_active:
+                    self.modbus_panel.stop_log()
 
         self.manager.point_reached.connect(_after_start)
         self.manager.move_to_point(first, speed)
@@ -574,6 +581,8 @@ class MainWindow(QMainWindow):
         self.start_pattern_btn.setEnabled(True)
         self.pause_pattern_btn.setEnabled(False)
         self.pause_pattern_btn.setText("Pause Pattern")
+        if self.modbus_panel.auto_logging_active:
+            self.modbus_panel.stop_log()
 
     # ------------------------------------------------------------------
     # Qt events
