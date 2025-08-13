@@ -288,6 +288,15 @@ class MainWindow(QMainWindow):
         self.position_canvas = PositionCanvas()
         right_layout.addWidget(self.position_canvas, stretch=1)
 
+        canvas_controls = QHBoxLayout()
+        self.zoom_in_btn = QPushButton("Zoom In")
+        self.zoom_out_btn = QPushButton("Zoom Out")
+        self.center_pos_btn = QPushButton("Center Manipulator")
+        canvas_controls.addWidget(self.zoom_in_btn)
+        canvas_controls.addWidget(self.zoom_out_btn)
+        canvas_controls.addWidget(self.center_pos_btn)
+        right_layout.addLayout(canvas_controls)
+
         # DXF load button
         self.load_dxf_btn = QPushButton("Load DXF")
         right_layout.addWidget(self.load_dxf_btn)
@@ -311,6 +320,10 @@ class MainWindow(QMainWindow):
         self.start_pattern_btn = QPushButton("Start Pattern")
         self.start_pattern_btn.setEnabled(False)
         right_layout.addWidget(self.start_pattern_btn)
+
+        self.pause_pattern_btn = QPushButton("Pause Pattern")
+        self.pause_pattern_btn.setEnabled(False)
+        right_layout.addWidget(self.pause_pattern_btn)
 
         self.progress_label = QLabel("Pattern progress: 0%")
         right_layout.addWidget(self.progress_label)
@@ -346,6 +359,12 @@ class MainWindow(QMainWindow):
             lambda msg: self._handle_error("DXF", msg)
         )
         self.start_pattern_btn.clicked.connect(self._on_start_pattern)
+        self.pause_pattern_btn.clicked.connect(self._toggle_pause_pattern)
+        self.zoom_in_btn.clicked.connect(self.position_canvas.zoom_in)
+        self.zoom_out_btn.clicked.connect(self.position_canvas.zoom_out)
+        self.center_pos_btn.clicked.connect(
+            self.position_canvas.center_on_position
+        )
         self.manager.pattern_progress.connect(self._update_pattern_progress)
         self.manager.pattern_completed.connect(self._handle_pattern_completed)
 
@@ -471,6 +490,8 @@ class MainWindow(QMainWindow):
         # Disable to prevent double-starts; reset UI
         self.start_pattern_btn.setEnabled(False)
         self.progress_label.setText("Pattern progress: 0%")
+        self.pause_pattern_btn.setEnabled(True)
+        self.pause_pattern_btn.setText("Pause Pattern")
 
         speed = self.speed_input.value()
 
@@ -484,7 +505,18 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             # Surface any exceptions cleanly
             self.start_pattern_btn.setEnabled(True)
+            self.pause_pattern_btn.setEnabled(False)
             self._handle_error("PATH", str(exc))
+
+    def _toggle_pause_pattern(self):
+        if self.pause_pattern_btn.text().startswith("Pause"):
+            self.manager.pause_path()
+            self.pause_pattern_btn.setText("Resume Pattern")
+            self.status_panel.log_message("Pattern paused")
+        else:
+            self.manager.resume_path()
+            self.pause_pattern_btn.setText("Pause Pattern")
+            self.status_panel.log_message("Pattern resumed")
 
     def _update_pattern_progress(self, index, pct, remaining):
         self.position_canvas.draw_path_progress(index, self._vertices_xy, self._segments)
@@ -496,6 +528,8 @@ class MainWindow(QMainWindow):
         self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
         self.status_panel.log_message("Pattern completed")
         self.start_pattern_btn.setEnabled(True)
+        self.pause_pattern_btn.setEnabled(False)
+        self.pause_pattern_btn.setText("Pause Pattern")
 
     # ------------------------------------------------------------------
     # Qt events
