@@ -237,27 +237,47 @@ class ManipulatorController:
 
     def wait_until_in_position(self, timeout: float = 15.0) -> bool:
         self._check_connection()
-        start_time = time.time()
+        overall_start = time.time()
+        motion_started = False
         # Track movement so a long travel does not trigger a timeout while the
         # axis is still progressing toward the target.
         try:
             last_pos = self.read_position()
         except Exception:
             last_pos = None
+
+        # Wait briefly for motion to begin (bit 16 clears)
+        while (time.time() - overall_start) < 1.0:
+            status_val = self._read_status()
+            if not (status_val & 16):
+                motion_started = True
+                break
+            time.sleep(0.05)
+
+        start_time = time.time() if motion_started else overall_start
+
         while True:
             status_val = self._read_status()
-            if status_val & 16:
-                return True
-            try:
-                curr_pos = self.read_position()
-            except Exception:
-                curr_pos = None
-            if (
-                curr_pos is not None
-                and (last_pos is None or abs(curr_pos - last_pos) > 1e-4)
-            ):
-                last_pos = curr_pos
-                start_time = time.time()
+            if motion_started:
+                if status_val & 16:
+                    return True
+            else:
+                if not (status_val & 16):
+                    motion_started = True
+                    start_time = time.time()
+
+            if motion_started:
+                try:
+                    curr_pos = self.read_position()
+                except Exception:
+                    curr_pos = None
+                if (
+                    curr_pos is not None
+                    and (last_pos is None or abs(curr_pos - last_pos) > 1e-4)
+                ):
+                    last_pos = curr_pos
+                    start_time = time.time()
+
             if (time.time() - start_time) >= timeout:
                 return False
             time.sleep(0.5)
