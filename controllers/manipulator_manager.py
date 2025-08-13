@@ -1,6 +1,7 @@
 """High level manager for multiple manipulator axes."""
 
 import logging
+import math
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -221,8 +222,13 @@ class ManipulatorManager(QObject):
     ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
-        Axis velocities are scaled so that the resulting vector velocity
-        maintains the requested overall ``speed`` regardless of direction.
+        Each active axis moves at the requested ``speed`` in the direction of
+        travel.  The previous behavior scaled per-axis velocities based on the
+        relative displacement of each axis which could result in extremely slow
+        speeds when one axis had only a small travel component.  By using the
+        same speed for all axes (with sign determined by direction), no axis
+        is artificially slowed and short moves no longer exceed controller
+        timeouts.
 
         Returns ``True`` if all commanded axes reported they reached their
         destination. If an axis fails the corresponding error signal is emitted
@@ -244,8 +250,7 @@ class ManipulatorManager(QObject):
         for idx, axis in enumerate(("x", "y", "z")):
             delta = deltas[idx]
             if abs(delta) > EPSILON:
-                axis_speed = speed * delta / distance
-                axis_speed = adjust_axis_velocity(axis_speed)
+                axis_speed = adjust_axis_velocity(math.copysign(speed, delta))
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
