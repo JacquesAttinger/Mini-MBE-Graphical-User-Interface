@@ -2,8 +2,7 @@
 
 import threading
 import time
-import math
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -14,6 +13,11 @@ HOST = "169.254.151.255"
 PORT = 502
 TIMEOUT = 10
 AXIS_SLAVE_MAP = {"x": 1, "y": 2, "z": 3}
+
+# Minimum positional delta that will trigger an actual move command.  Values
+# smaller than this are treated as already "in position" to avoid waiting on
+# axes that have no movement.
+EPSILON = 1e-6
 
 
 class ManipulatorManager(QObject):
@@ -43,10 +47,6 @@ class ManipulatorManager(QObject):
         }
         self._monitoring = False
         self._monitor_thread = None
-        # Software offset applied to every vertex in execute_path.
-        # This is derived from the manipulator's position when a path starts
-        # executing so that any previously set hardware origin is ignored.
-        self._origin_offset: Optional[Tuple[float, float, float]] = None
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -87,18 +87,6 @@ class ManipulatorManager(QObject):
             except Exception:  # pragma: no cover - best effort
                 pass
 
-    def reset_path_state(self) -> None:
-        """Clear any remembered path offset.
-
-        The manipulator's internal coordinate system can be re-zeroed by other
-        software.  When this happens we derive a software offset in
-        :meth:`execute_path` so DXF coordinates remain relative to the current
-        physical position.  Calling this method before starting a new pattern
-        discards the previous offset, preventing stale coordinates from
-        influencing subsequent paths.
-        """
-        self._origin_offset = None
-
     def _run_async(self, axis: str, action, *args):
         """Execute controller actions in a background thread.
 
@@ -132,7 +120,19 @@ class ManipulatorManager(QObject):
         """Move an individual axis in a worker thread."""
 
         def action(ctrl, position, velocity):
+            try:
+                current = ctrl.read_position()
+            except Exception:
+                current = None
+            if current is not None and abs(current - position) <= EPSILON:
+                return f"{axis.upper()} already at {position:.3f} mm"
+            try:
+                ctrl.motor_on()
+            except Exception:
+                pass
             ctrl.move_absolute(position, velocity)
+            if not ctrl.wait_until_in_position():
+                raise RuntimeError("Failed to reach position")
             return f"{axis.upper()} moved to {position:.3f} mm"
 
         self._run_async(axis, action, position, velocity)
@@ -155,53 +155,34 @@ class ManipulatorManager(QObject):
             return f"{axis.upper()} homing procedure started"
 
         self._run_async(axis, action)
-
     # ------------------------------------------------------------------
     # High level composite moves
     # ------------------------------------------------------------------
-    def _move_to(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> Tuple[bool, float]:
-        """Synchronously move all axes from ``start`` to ``target``.
+    def _move_axes(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> bool:
+        """Issue move commands for axes that actually need to travel.
 
-        This simplified implementation issues a single absolute move command to
-        each axis using the provided ``speed`` value.  After commanding the move
-        it waits for all axes to report they are in position.  No per-axis
-        velocity calculations are performed which ensures straightforward,
-        sequential motion for each coordinate in a path.
-
-        Returns a tuple ``(ok, distance_mm)`` where ``ok`` indicates whether all
-        axes reported they reached the commanded position and ``distance_mm`` is
-        the travelled distance.
+        Returns ``True`` if all commanded axes reported they reached their
+        destination.  If an axis fails the corresponding error signal is
+        emitted and ``False`` is returned.
         """
 
-        disable_z = abs(target[2] - start[2]) < 1e-6
+        active_axes = []
+        for idx, axis in enumerate(("x", "y", "z")):
+            delta = target[idx] - start[idx]
+            if abs(delta) > EPSILON:
+                ctrl = self.controllers[axis]
+                try:
+                    ctrl.motor_on()
+                except Exception:
+                    pass
+                ctrl.move_absolute(target[idx], speed)
+                active_axes.append(axis)
 
-        # Command each axis to the target position.  All axes use the same speed
-        # value to keep behaviour predictable.
-        self.controllers['x'].move_absolute(target[0], speed)
-        self.controllers['y'].move_absolute(target[1], speed)
-        if not disable_z:
-            self.controllers['z'].move_absolute(target[2], speed)
-
-        # Wait for the axes to finish the move before proceeding.  If any axis
-        # fails, surface the error and abort the current operation.
-        wait_results = {
-            'x': self.controllers['x'].wait_until_in_position(),
-            'y': self.controllers['y'].wait_until_in_position(),
-        }
-        if not disable_z:
-            wait_results['z'] = self.controllers['z'].wait_until_in_position()
-
-        for axis, ok in wait_results.items():
-            if not ok:
+        for axis in active_axes:
+            if not self.controllers[axis].wait_until_in_position():
                 self.error_occurred.emit(axis, "Failed to reach position")
-                return False, 0.0
-
-        dist = math.sqrt(
-            (target[0] - start[0]) ** 2 +
-            (target[1] - start[1]) ** 2 +
-            (target[2] - start[2]) ** 2
-        )
-        return True, dist
+                return False
+        return True
 
     def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:
         """Move to a single 3D coordinate at the given speed."""
@@ -216,66 +197,39 @@ class ManipulatorManager(QObject):
             except Exception:
                 start = (0.0, 0.0, 0.0)
 
-            ok, _ = self._move_to(start, target, speed)
-            if ok:
-                self.status_updated.emit(
-                    f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
-                )
+            try:
+                if self._move_axes(start, target, speed):
+                    self.status_updated.emit(
+                        f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                    )
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                self.error_occurred.emit("PATH", str(exc))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
-        """Execute a series of 3D vertices at constant speed."""
+        """Execute a series of 3D vertices sequentially at a constant speed."""
 
         def worker():
             try:
                 if not vertices:
                     return
+                total = len(vertices)
                 try:
-                    current_pos = (
+                    current = (
                         self.controllers['x'].read_position(),
                         self.controllers['y'].read_position(),
                         self.controllers['z'].read_position(),
                     )
                 except Exception:
-                    current_pos = (0.0, 0.0, 0.0)
+                    current = (0.0, 0.0, 0.0)
 
-                # Establish software offset if not already set
-                if self._origin_offset is None:
-                    first = vertices[0]
-                    self._origin_offset = (
-                        current_pos[0] - first[0],
-                        current_pos[1] - first[1],
-                        current_pos[2] - first[2],
-                    )
-
-                total_dist = 0.0
-                for i in range(1, len(vertices)):
-                    sx, sy, sz = vertices[i-1]
-                    ex, ey, ez = vertices[i]
-                    total_dist += math.sqrt((ex-sx)**2 + (ey-sy)**2 + (ez-sz)**2)
-
-                if speed > 0:
-                    self.pattern_progress.emit(0, 0.0, total_dist / speed)
-
-                elapsed = 0.0
                 for idx, target in enumerate(vertices):
-                    adjusted_target = (
-                        target[0] + self._origin_offset[0],
-                        target[1] + self._origin_offset[1],
-                        target[2] + self._origin_offset[2],
-                    )
-                    ok, dist = self._move_to(current_pos, adjusted_target, speed)
-                    if not ok:
+                    if not self._move_axes(current, target, speed):
                         return
-                    elapsed += dist
-                    remaining = max(0.0, total_dist - elapsed)
-                    pct = elapsed / total_dist if total_dist else 1.0
-                    if speed > 0:
-                        self.pattern_progress.emit(idx, pct, remaining / speed)
-                    else:
-                        self.pattern_progress.emit(idx, pct, 0.0)
-                    current_pos = adjusted_target
+                    current = target
+                    pct = (idx + 1) / total if total else 1.0
+                    self.pattern_progress.emit(idx, pct, 0.0)
 
                 self.pattern_completed.emit()
             except Exception as exc:  # pragma: no cover - hardware dependent
