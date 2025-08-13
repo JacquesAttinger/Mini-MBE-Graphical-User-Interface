@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from controllers.smcd14_controller import ManipulatorController
+from controllers.smcd14_controller import ManipulatorController, MotionNeverStartedError
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -155,7 +155,19 @@ class ManipulatorManager(QObject):
             except Exception:
                 pass
             ctrl.move_absolute(position, velocity)
-            if not ctrl.wait_until_in_position(target=position):
+            try:
+                ok = ctrl.wait_until_in_position(target=position)
+            except MotionNeverStartedError as exc:
+                status = ctrl._read_status()
+                msg = str(exc)
+                self._log_event(
+                    axis,
+                    "error",
+                    msg,
+                    f"status={status}",
+                )
+                raise
+            if not ok:
                 err = ctrl.read_error_code()
                 status = ctrl._read_status()
                 msg = (
@@ -229,7 +241,20 @@ class ManipulatorManager(QObject):
 
         for axis, pos in active_axes:
             ctrl = self.controllers[axis]
-            if not ctrl.wait_until_in_position(target=pos):
+            try:
+                ok = ctrl.wait_until_in_position(target=pos)
+            except MotionNeverStartedError as exc:
+                status = ctrl._read_status()
+                msg = str(exc)
+                self._log_event(
+                    axis,
+                    "error",
+                    msg,
+                    f"status={status}",
+                )
+                self.error_occurred.emit(axis, msg)
+                return False
+            if not ok:
                 err = ctrl.read_error_code()
                 status = ctrl._read_status()
                 msg = (

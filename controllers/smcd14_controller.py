@@ -35,6 +35,17 @@ MIN_AXIS_VELOCITY = 1e-4  # mm/s
 MAX_AXIS_VELOCITY = 1.0    # mm/s
 VELOCITY_THRESHOLD = 5e-5  # Threshold for rounding to zero
 EPSILON = 1e-4  # Positional tolerance in millimeters
+RUNNING_BIT_TIMEOUT = 2.0  # seconds to wait for running bit to assert
+
+# ----------------------------------------------------------------------
+# Custom Exceptions
+# ----------------------------------------------------------------------
+
+
+class MotionNeverStartedError(RuntimeError):
+    """Raised when a move command fails to trigger motion."""
+
+    pass
 
 # ----------------------------------------------------------------------
 # Helper Functions
@@ -286,6 +297,7 @@ class ManipulatorController:
         self._check_connection()
         last_change = time.time()
         motion_started = False
+        running_deadline = time.time() + RUNNING_BIT_TIMEOUT
         try:
             last_pos = self.read_position()
         except Exception:
@@ -293,6 +305,8 @@ class ManipulatorController:
 
         while True:
             status_val = self._read_status()
+            running = bool(status_val & 1)
+            in_pos = bool(status_val & 16)
             try:
                 curr_pos = self.read_position()
             except Exception:
@@ -302,13 +316,21 @@ class ManipulatorController:
                 target is not None
                 and curr_pos is not None
                 and abs(curr_pos - target) <= EPSILON
-                and status_val & 16
+                and in_pos
             ):
                 return True
 
-            if not motion_started and not (status_val & 16):
+            if running:
                 motion_started = True
                 last_change = time.time()
+
+            if (
+                not motion_started
+                and not running
+                and in_pos
+                and time.time() > running_deadline
+            ):
+                raise MotionNeverStartedError("Motion never started")
 
             if (
                 curr_pos is not None
@@ -318,7 +340,7 @@ class ManipulatorController:
                 last_pos = curr_pos
                 last_change = time.time()
 
-            if motion_started and status_val & 16:
+            if motion_started and in_pos:
                 if target is None or curr_pos is None or abs(curr_pos - target) <= EPSILON:
                     return True
 
