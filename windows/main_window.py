@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QTableWidget,
     QTableWidgetItem,
+    QInputDialog,
 )
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt
@@ -440,8 +441,21 @@ class MainWindow(QMainWindow):
                 z_pos = self.manager.controllers['z'].read_position()
             except Exception:
                 z_pos = self._positions.get('z', 0.0)
+            # Query desired origin placement
+            x_off, ok = QInputDialog.getDouble(
+                self, "DXF Origin", "X coordinate (mm):", 0.0
+            )
+            if not ok:
+                x_off = 0.0
+            y_off, ok = QInputDialog.getDouble(
+                self, "DXF Origin", "Y coordinate (mm):", 0.0
+            )
+            if not ok:
+                y_off = 0.0
             # Let the existing service parse & build geometry
-            self.dxf_service.load_dxf(filename, scale=1.0, z_height=z_pos)
+            self.dxf_service.load_dxf(
+                filename, scale=1.0, z_height=z_pos, origin=(x_off, y_off)
+            )
 
     def _handle_dxf_loaded(self, filename, geometry):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)

@@ -175,8 +175,18 @@ def parse_dxf(file_path, resolution=1.0, use_interpolation=True, force_mm=True):
             paths.append(pts)
     return paths
 
-def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, scale=1.0, mirror=False, z_height=0.0):
-    """Returns standardized format with both display and movement data"""
+def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True,
+                             scale=1.0, mirror=False, z_height=0.0,
+                             origin=(0.0, 0.0)):
+    """Returns standardized format with both display and movement data.
+
+    Parameters
+    ----------
+    origin:
+        ``(x, y)`` tuple giving the coordinate at which the DXF's origin
+        should be placed after scaling/mirroring.  Defaults to ``(0, 0)``
+        (no translation).
+    """
     paths = parse_dxf(file_path, resolution, use_interpolation)
     
     display_paths = []
@@ -194,6 +204,8 @@ def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True, 
             y *= scale
             if mirror:
                 x = -x
+            x += origin[0]
+            y += origin[1]
 
             display_path.append((x, y))
             movement_path.append((x, y, z_height))
