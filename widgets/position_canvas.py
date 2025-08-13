@@ -31,11 +31,12 @@ class EnhancedPositionCanvas(FigureCanvas):
         self.ax.set_facecolor('#f8f8f8')
         self.setParent(parent)
         self.setFocusPolicy(Qt.StrongFocus)
-        
+
         # Connect events
         self.mpl_connect('button_press_event', self.on_press)
         self.mpl_connect('button_release_event', self.on_release)
         self.mpl_connect('motion_notify_event', self.on_motion)
+        self.mpl_connect('scroll_event', self.on_scroll)
 
         self.update_plot()
 
@@ -82,6 +83,33 @@ class EnhancedPositionCanvas(FigureCanvas):
 
     def pan_right(self, amount=1.0):
         self.pan_view(amount * self.current_zoom/5, 0)
+
+    # --- Zoom Controls ---
+    def on_scroll(self, event):
+        """Handle mouse wheel zooming"""
+        if event.step > 0:
+            self.zoom_in()
+        elif event.step < 0:
+            self.zoom_out()
+
+    def zoom_in(self):
+        self.zoom(0.8)
+
+    def zoom_out(self):
+        self.zoom(1.25)
+
+    def zoom(self, factor):
+        """Scale the current zoom level by *factor*"""
+        self.current_zoom = max(0.001, self.current_zoom * factor)
+        self.update_plot()
+
+    def center_on_position(self):
+        """Center the view on the current manipulator position"""
+        scale = 1000.0 if self.current_zoom < 0.1 else 1.0
+        x_disp = self.current_position[0] * scale
+        y_disp = self.current_position[1] * scale
+        self.view_center = [x_disp, y_disp]
+        self.update_plot()
 
     # --- Data Update Methods ---
     def update_position(self, x, y):

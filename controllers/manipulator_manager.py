@@ -47,6 +47,8 @@ class ManipulatorManager(QObject):
         }
         self._monitoring = False
         self._monitor_thread = None
+        self._pause_event = threading.Event()
+        self._pause_event.set()
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -206,6 +208,16 @@ class ManipulatorManager(QObject):
                 self.error_occurred.emit("PATH", str(exc))
 
         threading.Thread(target=worker, daemon=True).start()
+        
+    def pause_path(self):
+        """Pause the currently executing path."""
+        self._pause_event.clear()
+        self.status_updated.emit("Pattern paused")
+
+    def resume_path(self):
+        """Resume a paused path."""
+        self._pause_event.set()
+        self.status_updated.emit("Pattern resumed")
 
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
         """Execute a series of 3D vertices sequentially at a constant speed."""
@@ -214,6 +226,7 @@ class ManipulatorManager(QObject):
             try:
                 if not vertices:
                     return
+                self._pause_event.set()
                 total = len(vertices)
                 try:
                     current = (
@@ -225,6 +238,7 @@ class ManipulatorManager(QObject):
                     current = (0.0, 0.0, 0.0)
 
                 for idx, target in enumerate(vertices):
+                    self._pause_event.wait()
                     if not self._move_axes(current, target, speed):
                         return
                     current = target
