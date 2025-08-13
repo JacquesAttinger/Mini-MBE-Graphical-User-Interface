@@ -54,7 +54,6 @@ class ModbusPanel(QWidget):
         self._log: list[Dict[str, str]] = []
 
         layout = QVBoxLayout(self)
-
         # Save button
         self.save_btn = QPushButton("Save Log")
         self.save_btn.clicked.connect(self._save_log)
@@ -70,7 +69,6 @@ class ModbusPanel(QWidget):
             "raw": raw,
         }
         self._log.append(entry)
-        boxes = self.axis_boxes.get(axis)
         if boxes and action in boxes:
             boxes[action].update_content(description, raw)
 
