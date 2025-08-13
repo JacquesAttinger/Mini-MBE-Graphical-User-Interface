@@ -69,7 +69,7 @@ class ModbusPanel(QWidget):
             cb = QCheckBox(cmd)
             cb.setChecked(True)
             cb.stateChanged.connect(
-                lambda state, c=cmd: self._action_enabled.__setitem__(
+                lambda state, c=cmd: self._update_action_visibility(
                     c, state == Qt.Checked
                 )
             )
@@ -98,6 +98,8 @@ class ModbusPanel(QWidget):
 
     # ------------------------------------------------------------------
     def log_event(self, axis: str, action: str, description: str, raw: str) -> None:
+        if not self._action_enabled.get(action, True):
+            return
         boxes = self._ensure_axis(axis)
         if action in boxes:
             boxes[action].update_content(description, raw)
@@ -132,6 +134,7 @@ class ModbusPanel(QWidget):
             cmd_boxes: dict[str, _CommandBox] = {}
             for cmd in self.COMMANDS:
                 box = _CommandBox(cmd)
+                box.setVisible(self._action_enabled.get(cmd, True))
                 layout.addWidget(box)
                 cmd_boxes[cmd] = box
             self._scroll_layout.insertWidget(
@@ -139,6 +142,13 @@ class ModbusPanel(QWidget):
             )
             self._boxes[axis] = cmd_boxes
         return self._boxes[axis]
+    
+    def _update_action_visibility(self, action: str, enabled: bool) -> None:
+        """Enable/disable logging and visibility for ``action``."""
+        self._action_enabled[action] = enabled
+        for axis_boxes in self._boxes.values():
+            if action in axis_boxes:
+                axis_boxes[action].setVisible(enabled)
 
     # ------------------------------------------------------------------
     def _save_log(self) -> None:
@@ -147,6 +157,11 @@ class ModbusPanel(QWidget):
         )
         if not path:
             return
+        data = [
+            e
+            for e in self._log
+            if e.get("action") is None or self._action_enabled.get(e.get("action"), True)
+        ]
         data = [
             e
             for e in self._log
