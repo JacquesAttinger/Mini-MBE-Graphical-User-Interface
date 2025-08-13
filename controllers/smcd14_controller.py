@@ -90,6 +90,9 @@ class ManipulatorController:
         self.client = None
         self.loop = None  # asyncio event loop for PyModbus
         self._lock = Lock()
+        # Serialize pulses to the START_REQ register so concurrent
+        # move commands do not overlap the 0→1→0 cycle.
+        self._start_lock = Lock()
         self._last_speed = None
 
     def _log(self, action: str, description: str, raw: str) -> None:
@@ -171,14 +174,7 @@ class ManipulatorController:
             res = self.client.write_registers(address=TARGET_SPEED_ADDR, values=speed_regs, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to write target speed.")
-            res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to send start request.")
-            # Ensure a fresh 0->1 transition for each move
-            time.sleep(0.05)
-            res = self.client.write_register(address=START_REQ_ADDR, value=0, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to reset start request.")
+            self._pulse_start_req()
             raw = (
                 f"{MOVE_TYPE_ADDR}=1; {TARGET_POS_ADDR}={pos_regs};"
                 f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1->0"
@@ -202,14 +198,7 @@ class ManipulatorController:
             res = self.client.write_registers(address=TARGET_SPEED_ADDR, values=speed_regs, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to write target speed.")
-            res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to send start request.")
-            # Ensure a fresh 0->1 transition for each move
-            time.sleep(0.05)
-            res = self.client.write_register(address=START_REQ_ADDR, value=0, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to reset start request.")
+            self._pulse_start_req()
             raw = (
                 f"{MOVE_TYPE_ADDR}=2; {TARGET_POS_ADDR}={dist_regs};"
                 f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1->0"
@@ -345,6 +334,35 @@ class ManipulatorController:
         return val
 
     # Internal helper methods
+    def _pulse_start_req(self) -> None:
+        """Issue a start request pulse (0→1→0) and wait until cleared."""
+        self._check_connection()
+        with self._start_lock:
+            res = self.client.write_register(
+                address=START_REQ_ADDR, value=1, slave=self.slave_id
+            )
+            if res.isError():
+                raise RuntimeError("Failed to send start request.")
+            # Allow time for the controller to latch the start request
+            time.sleep(0.05)
+            res = self.client.write_register(
+                address=START_REQ_ADDR, value=0, slave=self.slave_id
+            )
+            if res.isError():
+                raise RuntimeError("Failed to reset start request.")
+            deadline = time.time() + 1.0
+            while True:
+                res = self.client.read_holding_registers(
+                    address=START_REQ_ADDR, count=1, slave=self.slave_id
+                )
+                if res.isError():
+                    raise RuntimeError("Failed to read start request register.")
+                if res.registers[0] == 0:
+                    break
+                if time.time() > deadline:
+                    raise RuntimeError("Start request register did not clear.")
+                time.sleep(0.01)
+
     def _read_status(self) -> int:
         regs = self._read_registers(address=STATUS_ADDR, count=1)
         return regs[0]
