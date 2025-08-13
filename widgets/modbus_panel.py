@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -52,7 +52,7 @@ class ModbusPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._log: list[Dict[str, str]] = []
+        self._log: list[Dict[str, Any]] = []
         self._logging_active = False
         self._auto_logging = False
 
@@ -160,9 +160,19 @@ class ModbusPanel(QWidget):
         else:
             self.start_log()
 
-    def start_log(self, auto: bool = False) -> None:
-        """Begin capturing Modbus events."""
+    def start_log(self, auto: bool = False, preamble: dict | None = None) -> None:
+        """Begin capturing Modbus events.
+
+        Parameters
+        ----------
+        auto:
+            Flag indicating whether logging was started automatically.
+        preamble:
+            Optional metadata entry to prepend to the log before events.
+        """
         self._log = []
+        if preamble is not None:
+            self._log.append(preamble)
         self._logging_active = True
         self._auto_logging = auto
         self.log_btn.setText("Stop Log")
