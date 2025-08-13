@@ -12,7 +12,19 @@ A minimal graphical interface for controlling a manipulator and visualising DXF 
    ```
    pip install -r requirements.txt
    ```
-3. Run the application:
+3. Install development dependencies to run tests:
+   ```
+   pip install -r requirements-dev.txt
+   ```
+4. Run the application:
    ```
    python app.py
    ```
+
+## Running tests
+
+After installing the development dependencies, run the test suite with:
+
+```
+pytest
+```
