@@ -40,11 +40,12 @@ class CoordinateCheckerDialog(QDialog):
     It projects everything to (x_mm, y_mm) in the original order.
     """
 
-    def __init__(self, vertices, jump_warn_mm=0.5, parent=None):
+    def __init__(self, vertices, speed=0.0, jump_warn_mm=0.5, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DXF Coordinate Checker")
         self.vertices, self._dropped = self._coerce_xy(vertices)
         self.jump_warn_mm = float(jump_warn_mm)
+        self.speed = float(speed)
 
         layout = QVBoxLayout(self)
 
@@ -56,8 +57,15 @@ class CoordinateCheckerDialog(QDialog):
 
         # Table of coordinates
         self.table = QTableWidget(self)
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Index", "X (mm)", "Y (mm)", "Δ from prev (mm)"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels([
+            "Index",
+            "X (mm)",
+            "Y (mm)",
+            "Δ from prev (mm)",
+            "Vx (mm/s)",
+            "Vy (mm/s)",
+        ])
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -76,7 +84,7 @@ class CoordinateCheckerDialog(QDialog):
         self.accept_btn.clicked.connect(self.accept)
         self.cancel_btn.clicked.connect(self.reject)
 
-        self.resize(700, 500)
+        self.resize(800, 500)
 
     # ---------- helpers ----------
     def _coerce_xy(self, vertices):
@@ -132,11 +140,20 @@ class CoordinateCheckerDialog(QDialog):
             self.table.setItem(i, 1, QTableWidgetItem(f"{x:.6f}"))
             self.table.setItem(i, 2, QTableWidgetItem(f"{y:.6f}"))
             d = 0.0 if prev is None else hypot(x - prev[0], y - prev[1])
-            itm = QTableWidgetItem(f"{d:.6f}")
+            dist_itm = QTableWidgetItem(f"{d:.6f}")
             if d >= self.jump_warn_mm and i > 0:
-                itm.setBackground(QColor(255, 230, 200))  # highlight big jumps
-            self.table.setItem(i, 3, itm)
+                dist_itm.setBackground(QColor(255, 230, 200))  # highlight big jumps
+            self.table.setItem(i, 3, dist_itm)
+
+            if prev is None or d == 0.0:
+                vx = vy = 0.0
+            else:
+                vx = self.speed * (x - prev[0]) / d
+                vy = self.speed * (y - prev[1]) / d
+            self.table.setItem(i, 4, QTableWidgetItem(f"{vx:.6f}"))
+            self.table.setItem(i, 5, QTableWidgetItem(f"{vy:.6f}"))
             prev = (x, y)
+
         self.table.resizeColumnsToContents()
 
     @staticmethod
@@ -457,7 +474,12 @@ class MainWindow(QMainWindow):
             )
             return
 
-        checker = CoordinateCheckerDialog(self._vertices_xy, jump_warn_mm=0.5, parent=self)
+        checker = CoordinateCheckerDialog(
+            self._vertices_xy,
+            speed=self.speed_input.value(),
+            jump_warn_mm=0.5,
+            parent=self,
+        )
         if checker.exec() == QDialog.Accepted:
             issues = self._preflight_path(self._vertices_xy, max_jump_mm=2.0)
             if issues:
@@ -490,23 +512,40 @@ class MainWindow(QMainWindow):
         # Disable to prevent double-starts; reset UI
         self.start_pattern_btn.setEnabled(False)
         self.progress_label.setText("Pattern progress: 0%")
-        self.pause_pattern_btn.setEnabled(True)
+        self.pause_pattern_btn.setEnabled(False)
         self.pause_pattern_btn.setText("Pause Pattern")
 
         speed = self.speed_input.value()
 
-        # If your manager has a reset/init for path state, call it here:
         if hasattr(self.manager, "reset_path_state"):
             self.manager.reset_path_state()
 
-        # Kick off execution
-        try:
-            self.manager.execute_path(self._vertices, speed)
-        except Exception as exc:
-            # Surface any exceptions cleanly
-            self.start_pattern_btn.setEnabled(True)
-            self.pause_pattern_btn.setEnabled(False)
-            self._handle_error("PATH", str(exc))
+        first = self._vertices[0]
+
+        def _after_start(_target):
+            self.manager.point_reached.disconnect(_after_start)
+            reply = QMessageBox.question(
+                self,
+                "Starting Position",
+                "Starting position achieved. Ready to begin printing?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                self.pause_pattern_btn.setEnabled(True)
+                try:
+                    self.manager.execute_path(self._vertices, speed)
+                except Exception as exc:
+                    self.start_pattern_btn.setEnabled(True)
+                    self.pause_pattern_btn.setEnabled(False)
+                    self._handle_error("PATH", str(exc))
+            else:
+                self.start_pattern_btn.setEnabled(True)
+                self.pause_pattern_btn.setEnabled(False)
+                self.status_panel.log_message("Pattern start cancelled")
+
+        self.manager.point_reached.connect(_after_start)
+        self.manager.move_to_point(first, speed)
 
     def _toggle_pause_pattern(self):
         if self.pause_pattern_btn.text().startswith("Pause"):

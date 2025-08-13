@@ -34,6 +34,7 @@ class ManipulatorManager(QObject):
     connection_changed = Signal(str, bool)
     pattern_progress = Signal(int, float, float)  # index, percentage, remaining seconds
     pattern_completed = Signal()
+    point_reached = Signal(tuple)  # emitted when move_to_point completes
 
     def __init__(self,
                  host: str = HOST,
@@ -160,24 +161,38 @@ class ManipulatorManager(QObject):
     # ------------------------------------------------------------------
     # High level composite moves
     # ------------------------------------------------------------------
-    def _move_axes(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> bool:
+    def _move_axes(
+        self,
+        start: Tuple[float, float, float],
+        target: Tuple[float, float, float],
+        speed: float,
+    ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
+        Axis velocities are scaled so that the resulting vector velocity
+        maintains the requested overall ``speed`` regardless of direction.
+
         Returns ``True`` if all commanded axes reported they reached their
-        destination.  If an axis fails the corresponding error signal is
-        emitted and ``False`` is returned.
+        destination. If an axis fails the corresponding error signal is emitted
+        and ``False`` is returned.
         """
+
+        deltas = [target[i] - start[i] for i in range(3)]
+        distance = (deltas[0] ** 2 + deltas[1] ** 2 + deltas[2] ** 2) ** 0.5
+        if distance <= EPSILON:
+            return True
 
         active_axes = []
         for idx, axis in enumerate(("x", "y", "z")):
-            delta = target[idx] - start[idx]
+            delta = deltas[idx]
             if abs(delta) > EPSILON:
+                axis_speed = speed * abs(delta) / distance
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
                 except Exception:
                     pass
-                ctrl.move_absolute(target[idx], speed)
+                ctrl.move_absolute(target[idx], axis_speed)
                 active_axes.append(axis)
 
         for axis in active_axes:
@@ -204,6 +219,7 @@ class ManipulatorManager(QObject):
                     self.status_updated.emit(
                         f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
                     )
+                    self.point_reached.emit(target)
             except Exception as exc:  # pragma: no cover - hardware dependent
                 self.error_occurred.emit("PATH", str(exc))
 
