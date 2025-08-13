@@ -152,6 +152,7 @@ class ManipulatorController:
         self.client = None
         self.loop = None  # asyncio event loop for PyModbus
         self._lock = Lock()
+        self._last_velocity = None
 
     def _log(self, action: str, description: str, raw: str) -> None:
         if self.logger:
@@ -238,6 +239,7 @@ class ManipulatorController:
                 f"{MOVE_TYPE_ADDR}=1; {TARGET_POS_ADDR}={pos_regs};"
                 f" {TARGET_VEL_ADDR}={vel_regs}; {START_REQ_ADDR}=1"
             )
+            self._last_velocity = velocity
             desc = f"Move to {position} mm @ {velocity} mm/s"
             self._log("move_absolute", desc, raw)
 

@@ -224,6 +224,12 @@ class ManipulatorManager(QObject):
         deltas = [target[i] - start[i] for i in range(3)]
         distance = (deltas[0] ** 2 + deltas[1] ** 2 + deltas[2] ** 2) ** 0.5
         if distance <= EPSILON:
+            self._log_event(
+                "ALL",
+                "info",
+                f"Zero-distance move ignored start={start} target={target}",
+                "",
+            )
             return True
 
         active_axes = []
@@ -237,9 +243,19 @@ class ManipulatorManager(QObject):
                 except Exception:
                     pass
                 ctrl.move_absolute(target[idx], axis_speed)
-                active_axes.append((axis, target[idx]))
+                if hasattr(ctrl, "_last_velocity"):
+                    assert (
+                        abs(ctrl._last_velocity - axis_speed) <= EPSILON
+                    ), f"{axis} velocity mismatch"
+                self._log_event(
+                    axis,
+                    "move",
+                    f"target={target[idx]} speed={axis_speed}",
+                    "",
+                )
+                active_axes.append((axis, target[idx], axis_speed))
 
-        for axis, pos in active_axes:
+        for axis, pos, axis_speed in active_axes:
             ctrl = self.controllers[axis]
             try:
                 ok = ctrl.wait_until_in_position(target=pos)
@@ -268,6 +284,12 @@ class ManipulatorManager(QObject):
                 )
                 self.error_occurred.emit(axis, msg)
                 return False
+            self._log_event(
+                axis,
+                "in_position",
+                f"target={pos} speed={axis_speed}",
+                "",
+            )
         return True
 
     def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:

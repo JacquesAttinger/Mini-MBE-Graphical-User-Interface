@@ -544,7 +544,11 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.pause_pattern_btn.setEnabled(True)
                 try:
-                    self.manager.execute_path(self._vertices[1:], speed)
+                    is_closed = _almost_equal(self._vertices[0], self._vertices[-1])
+                    path = self._vertices[1:-1] if is_closed else self._vertices[1:]
+                    self._closing_leg = self._vertices[0] if is_closed else None
+                    self._closing_speed = speed
+                    self.manager.execute_path(path, speed)
                 except Exception as exc:
                     self.start_pattern_btn.setEnabled(True)
                     self.pause_pattern_btn.setEnabled(False)
@@ -576,6 +580,9 @@ class MainWindow(QMainWindow):
         )
 
     def _handle_pattern_completed(self):
+        if getattr(self, "_closing_leg", None) is not None:
+            self.manager.move_to_point(self._closing_leg, getattr(self, "_closing_speed", 0.0))
+            self._closing_leg = None
         self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
         self.status_panel.log_message("Pattern completed")
         self.start_pattern_btn.setEnabled(True)
