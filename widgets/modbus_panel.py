@@ -55,33 +55,6 @@ class ModbusPanel(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        layout.addWidget(self.scroll)
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        self.scroll.setWidget(content)
-
-        self.axis_boxes: Dict[str, Dict[str, _CommandBox]] = {}
-        for axis in ["x", "y", "z"]:
-            group = QGroupBox(axis.upper())
-            group_layout = QVBoxLayout(group)
-            boxes: Dict[str, _CommandBox] = {}
-            for cmd in self.COMMANDS:
-                box = _CommandBox(cmd)
-                group_layout.addWidget(box)
-                boxes[cmd] = box
-            group_layout.addStretch(1)
-            self.axis_boxes[axis] = boxes
-            content_layout.addWidget(group)
-
-        self.error_group = QGroupBox("Errors")
-        self._error_layout = QVBoxLayout(self.error_group)
-        self._error_layout.addStretch(1)
-        content_layout.addWidget(self.error_group)
-        content_layout.addStretch(1)
-
         # Save button
         self.save_btn = QPushButton("Save Log")
         self.save_btn.clicked.connect(self._save_log)
