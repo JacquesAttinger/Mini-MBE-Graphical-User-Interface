@@ -365,6 +365,14 @@ class ManipulatorManager(QObject):
                 except Exception:
                     current = (0.0, 0.0, 0.0)
 
+                # Record starting coordinate and timestamp
+                self._log_event(
+                    "PATH",
+                    "pattern_start",
+                    f"start={current}",
+                    "",
+                )
+
                 for idx, target in enumerate(vertices):
                     self._pause_event.wait()
                     if not self._move_axes(current, target, speed):
@@ -373,6 +381,13 @@ class ManipulatorManager(QObject):
                     pct = (idx + 1) / total if total else 1.0
                     self.pattern_progress.emit(idx, pct, 0.0)
 
+                # Record completion coordinate and timestamp
+                self._log_event(
+                    "PATH",
+                    "pattern_completed",
+                    f"end={current}",
+                    "",
+                )
                 self.pattern_completed.emit()
             except Exception as exc:  # pragma: no cover - hardware dependent
                 self.error_occurred.emit("PATH", str(exc))
