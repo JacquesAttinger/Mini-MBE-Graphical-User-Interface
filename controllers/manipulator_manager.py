@@ -7,7 +7,11 @@ from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from controllers.smcd14_controller import ManipulatorController, MotionNeverStartedError
+from controllers.smcd14_controller import (
+    ManipulatorController,
+    MotionNeverStartedError,
+    adjust_axis_velocity,
+)
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -240,7 +244,8 @@ class ManipulatorManager(QObject):
         for idx, axis in enumerate(("x", "y", "z")):
             delta = deltas[idx]
             if abs(delta) > EPSILON:
-                axis_speed = speed * abs(delta) / distance
+                axis_speed = speed * delta / distance
+                axis_speed = adjust_axis_velocity(axis_speed)
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
