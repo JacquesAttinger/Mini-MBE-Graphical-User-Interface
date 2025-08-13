@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QPushButton,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
     QScrollArea,
@@ -40,8 +39,6 @@ class ModbusPanel(QWidget):
     """Panel showing recent Modbus traffic grouped by axis and command."""
 
     COMMANDS = [
-        "motor_on",
-        "motor_off",
         "move_absolute",
         "move_relative",
         "read_position",
@@ -57,33 +54,6 @@ class ModbusPanel(QWidget):
         self._log: list[Dict[str, str]] = []
 
         layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        layout.addWidget(self.tabs)
-
-        self.axis_boxes: Dict[str, Dict[str, _CommandBox]] = {}
-        for axis in ["x", "y", "z"]:
-            tab = QWidget()
-            tab_layout = QVBoxLayout(tab)
-            boxes: Dict[str, _CommandBox] = {}
-            for cmd in self.COMMANDS:
-                box = _CommandBox(cmd)
-                tab_layout.addWidget(box)
-                boxes[cmd] = box
-            tab_layout.addStretch(1)
-            self.axis_boxes[axis] = boxes
-            self.tabs.addTab(tab, axis.upper())
-
-        # Errors tab
-        err_widget = QWidget()
-        err_layout = QVBoxLayout(err_widget)
-        self.error_area = QScrollArea()
-        self.error_area.setWidgetResizable(True)
-        self._error_container = QWidget()
-        self._error_layout = QVBoxLayout(self._error_container)
-        self._error_layout.addStretch(1)
-        self.error_area.setWidget(self._error_container)
-        err_layout.addWidget(self.error_area)
-        self.tabs.addTab(err_widget, "Errors")
 
         # Save button
         self.save_btn = QPushButton("Save Log")
