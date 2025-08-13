@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from PySide6.QtCore import QCoreApplication
 
@@ -18,6 +20,9 @@ class DummyCtrl:
             raise MotionNeverStartedError("Motion never started")
         self.pos = position
         self._last_speed = speed
+
+    def read_position(self):
+        return self.pos
 
     def wait_until_in_position(self, target: float):
         return True
@@ -57,3 +62,31 @@ def test_small_delta_uses_full_speed():
     assert mgr._move_axes(start, target, 0.01)
     assert mgr.controllers['x']._last_speed == pytest.approx(0.01)
     assert mgr.controllers['y']._last_speed == pytest.approx(0.01)
+
+
+def test_execute_path_logs_start_and_end():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    mgr.controllers = {
+        'x': DummyCtrl(0.0),
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+    done = threading.Event()
+    mgr.pattern_completed.connect(lambda: done.set())
+
+    mgr.execute_path([(1.0, 2.0, 3.0)], 0.1)
+
+    for _ in range(50):
+        if done.wait(0.1):
+            break
+        app.processEvents()
+
+    assert done.is_set()
+    log = mgr.get_modbus_log()
+    start = [e for e in log if e["axis"] == "PATH" and e["action"] == "pattern_start"]
+    end = [e for e in log if e["axis"] == "PATH" and e["action"] == "pattern_completed"]
+    assert start and end
+    assert "start=(0.0, 0.0, 0.0)" in start[-1]["description"]
+    assert "end=(1.0, 2.0, 3.0)" in end[-1]["description"]
+    assert end[-1]["time"] >= start[-1]["time"]
