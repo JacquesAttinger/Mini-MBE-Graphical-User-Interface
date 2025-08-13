@@ -35,6 +35,8 @@ class ManipulatorManager(QObject):
     pattern_progress = Signal(int, float, float)  # index, percentage, remaining seconds
     pattern_completed = Signal()
     point_reached = Signal(tuple)  # emitted when move_to_point completes
+    # axis, action, human readable description, raw register string
+    modbus_event = Signal(str, str, str, str)
 
     def __init__(self,
                  host: str = HOST,
@@ -42,10 +44,13 @@ class ManipulatorManager(QObject):
                  timeout: int = TIMEOUT,
                  axis_slave_map: Dict[str, int] = AXIS_SLAVE_MAP):
         super().__init__()
-        self.controllers = {
-            axis: ManipulatorController(host, port, timeout, slave)
-            for axis, slave in axis_slave_map.items()
-        }
+        self._modbus_log = []
+        self.controllers = {}
+        for axis, slave in axis_slave_map.items():
+            ctrl = ManipulatorController(
+                host, port, timeout, slave, axis=axis, logger=self._log_event
+            )
+            self.controllers[axis] = ctrl
         self._monitoring = False
         self._monitor_thread = None
         self._pause_event = threading.Event()
@@ -89,6 +94,22 @@ class ManipulatorManager(QObject):
                 ctrl.disconnect()
             except Exception:  # pragma: no cover - best effort
                 pass
+
+    def _log_event(self, axis: str, action: str, description: str, raw: str) -> None:
+        """Internal callback used by controllers to report Modbus traffic."""
+        entry = {
+            "time": time.time(),
+            "axis": axis,
+            "action": action,
+            "description": description,
+            "raw": raw,
+        }
+        self._modbus_log.append(entry)
+        self.modbus_event.emit(axis, action, description, raw)
+
+    def get_modbus_log(self) -> List[Dict[str, str]]:
+        """Return a copy of all recorded Modbus events."""
+        return list(self._modbus_log)
 
     def _run_async(self, axis: str, action, *args):
         """Execute controller actions in a background thread.

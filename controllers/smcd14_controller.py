@@ -118,18 +118,31 @@ def calculate_velocity_components(start_pos, end_pos, total_velocity):
 # Main Controller Class
 # ----------------------------------------------------------------------
 class ManipulatorController:
-    """
-    Manages Modbus TCP communication with an SMCD14-based manipulator axis.
-    """
-    def __init__(self, host: str, port: int = 502, timeout: int = 10, slave_id: int = 1):
+    """Manages Modbus TCP communication with an SMCD14-based manipulator axis."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int = 502,
+        timeout: int = 10,
+        slave_id: int = 1,
+        axis: str = "",
+        logger=None,
+    ):
         self.host = host
         self.port = port
         self.timeout = timeout
         self.slave_id = slave_id
+        self.axis = axis
+        self.logger = logger
 
         self.client = None
         self.loop = None  # asyncio event loop for PyModbus
         self._lock = Lock()
+
+    def _log(self, action: str, description: str, raw: str) -> None:
+        if self.logger:
+            self.logger(self.axis, action, description, raw)
 
     def connect(self) -> bool:
         """
@@ -173,6 +186,11 @@ class ManipulatorController:
             res = self.client.write_register(address=MOTOR_ON_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to turn motor on.")
+            self._log(
+                "motor_on",
+                "Motor ON",
+                f"{MOTOR_ON_ADDR}=1",
+            )
 
     def motor_off(self) -> None:
         self._check_connection()
@@ -180,6 +198,11 @@ class ManipulatorController:
             res = self.client.write_register(address=MOTOR_ON_ADDR, value=0, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to turn motor off.")
+            self._log(
+                "motor_off",
+                "Motor OFF",
+                f"{MOTOR_ON_ADDR}=0",
+            )
 
     def move_absolute(self, position: float, velocity: float) -> None:
         self._check_connection()
@@ -198,6 +221,12 @@ class ManipulatorController:
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
+            raw = (
+                f"{MOVE_TYPE_ADDR}=1; {TARGET_POS_ADDR}={pos_regs};"
+                f" {TARGET_VEL_ADDR}={vel_regs}; {START_REQ_ADDR}=1"
+            )
+            desc = f"Move to {position} mm @ {velocity} mm/s"
+            self._log("move_absolute", desc, raw)
 
     def move_relative(self, distance: float, velocity: float) -> None:
         self._check_connection()
@@ -216,6 +245,12 @@ class ManipulatorController:
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
+            raw = (
+                f"{MOVE_TYPE_ADDR}=2; {TARGET_POS_ADDR}={dist_regs};"
+                f" {TARGET_VEL_ADDR}={vel_regs}; {START_REQ_ADDR}=1"
+            )
+            desc = f"Move by {distance} mm @ {velocity} mm/s"
+            self._log("move_relative", desc, raw)
 
     def emergency_stop(self) -> None:
         self._check_connection()
@@ -223,6 +258,11 @@ class ManipulatorController:
             res = self.client.write_register(address=STOP_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Emergency stop failed.")
+            self._log(
+                "emergency_stop",
+                "Emergency stop",
+                f"{STOP_REQ_ADDR}=1",
+            )
 
     def clear_error(self) -> None:
         self._check_connection()
@@ -234,6 +274,11 @@ class ManipulatorController:
             res = self.client.write_register(address=CLEAR_REQ_ADDR, value=0, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to clear error (step 2).")
+            self._log(
+                "clear_error",
+                "Clear error",
+                f"{CLEAR_REQ_ADDR}=1->0",
+            )
 
     def wait_until_in_position(self, timeout: float = 15.0) -> bool:
         self._check_connection()
@@ -285,7 +330,13 @@ class ManipulatorController:
     def read_position(self) -> float:
         self._check_connection()
         regs = self._read_registers(address=ACTUAL_POS_ADDR, count=2)
-        return registers_to_float(regs)
+        pos = registers_to_float(regs)
+        self._log(
+            "read_position",
+            f"Position {pos}",
+            f"{ACTUAL_POS_ADDR}->{regs}",
+        )
+        return pos
 
     def get_position(self) -> float:
         """Compatibility wrapper for older callers."""
@@ -294,7 +345,9 @@ class ManipulatorController:
     def read_error_code(self) -> int:
         self._check_connection()
         regs = self._read_registers(address=ERROR_CODE_ADDR, count=1)
-        return regs[0]
+        code = regs[0]
+        self._log("read_error_code", f"Error {code}", f"{ERROR_CODE_ADDR}->{regs}")
+        return code
 
     def set_backlash(self, value: float) -> None:
         self._check_connection()
@@ -303,11 +356,18 @@ class ManipulatorController:
             res = self.client.write_registers(address=BACKLASH_ADDR, values=backlash_regs, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to set backlash parameter.")
+            self._log(
+                "set_backlash",
+                f"Backlash {value}",
+                f"{BACKLASH_ADDR}={backlash_regs}",
+            )
 
     def get_backlash(self) -> float:
         self._check_connection()
         regs = self._read_registers(address=BACKLASH_ADDR, count=2)
-        return registers_to_float(regs)
+        val = registers_to_float(regs)
+        self._log("get_backlash", f"Backlash {val}", f"{BACKLASH_ADDR}->{regs}")
+        return val
 
     # Internal helper methods
     def _read_status(self) -> int:
