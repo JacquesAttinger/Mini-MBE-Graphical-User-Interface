@@ -1,5 +1,6 @@
 """High level manager for multiple manipulator axes."""
 
+import logging
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -42,10 +43,13 @@ class ManipulatorManager(QObject):
                  host: str = HOST,
                  port: int = PORT,
                  timeout: int = TIMEOUT,
-                 axis_slave_map: Dict[str, int] = AXIS_SLAVE_MAP):
+                 axis_slave_map: Dict[str, int] = AXIS_SLAVE_MAP,
+                 motion_logging: bool = False):
         super().__init__()
         self._modbus_log = []
         self.controllers = {}
+        self._motion_logger = logging.getLogger(__name__)
+        self.motion_log_enabled = motion_logging
         for axis, slave in axis_slave_map.items():
             ctrl = ManipulatorController(
                 host, port, timeout, slave, axis=axis, logger=self._log_event
@@ -236,6 +240,14 @@ class ManipulatorManager(QObject):
                     ctrl.motor_on()
                 except Exception:
                     pass
+                if self.motion_log_enabled:
+                    self._motion_logger.info(
+                        "t=%s axis=%s target=%.3f speed=%.3f",
+                        time.time(),
+                        axis,
+                        target[idx],
+                        axis_speed,
+                    )
                 ctrl.move_absolute(target[idx], axis_speed)
                 active_axes.append((axis, target[idx]))
 
