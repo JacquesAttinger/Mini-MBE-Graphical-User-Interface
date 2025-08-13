@@ -14,6 +14,11 @@ PORT = 502
 TIMEOUT = 10
 AXIS_SLAVE_MAP = {"x": 1, "y": 2, "z": 3}
 
+# Minimum positional delta that will trigger an actual move command.  Values
+# smaller than this are treated as already "in position" to avoid waiting on
+# axes that have no movement.
+EPSILON = 1e-6
+
 
 class ManipulatorManager(QObject):
     """Coordinate multiple :class:`ManipulatorController` instances.
@@ -115,7 +120,19 @@ class ManipulatorManager(QObject):
         """Move an individual axis in a worker thread."""
 
         def action(ctrl, position, velocity):
+            try:
+                current = ctrl.read_position()
+            except Exception:
+                current = None
+            if current is not None and abs(current - position) <= EPSILON:
+                return f"{axis.upper()} already at {position:.3f} mm"
+            try:
+                ctrl.motor_on()
+            except Exception:
+                pass
             ctrl.move_absolute(position, velocity)
+            if not ctrl.wait_until_in_position():
+                raise RuntimeError("Failed to reach position")
             return f"{axis.upper()} moved to {position:.3f} mm"
 
         self._run_async(axis, action, position, velocity)
@@ -141,27 +158,50 @@ class ManipulatorManager(QObject):
     # ------------------------------------------------------------------
     # High level composite moves
     # ------------------------------------------------------------------
+    def _move_axes(self, start: Tuple[float, float, float], target: Tuple[float, float, float], speed: float) -> bool:
+        """Issue move commands for axes that actually need to travel.
+
+        Returns ``True`` if all commanded axes reported they reached their
+        destination.  If an axis fails the corresponding error signal is
+        emitted and ``False`` is returned.
+        """
+
+        active_axes = []
+        for idx, axis in enumerate(("x", "y", "z")):
+            delta = target[idx] - start[idx]
+            if abs(delta) > EPSILON:
+                ctrl = self.controllers[axis]
+                try:
+                    ctrl.motor_on()
+                except Exception:
+                    pass
+                ctrl.move_absolute(target[idx], speed)
+                active_axes.append(axis)
+
+        for axis in active_axes:
+            if not self.controllers[axis].wait_until_in_position():
+                self.error_occurred.emit(axis, "Failed to reach position")
+                return False
+        return True
+
     def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:
         """Move to a single 3D coordinate at the given speed."""
 
         def worker():
             try:
-                self.controllers['x'].move_absolute(target[0], speed)
-                self.controllers['y'].move_absolute(target[1], speed)
-                self.controllers['z'].move_absolute(target[2], speed)
-
-                wait_results = {
-                    'x': self.controllers['x'].wait_until_in_position(),
-                    'y': self.controllers['y'].wait_until_in_position(),
-                    'z': self.controllers['z'].wait_until_in_position(),
-                }
-                for axis, ok in wait_results.items():
-                    if not ok:
-                        self.error_occurred.emit(axis, "Failed to reach position")
-                        return
-                self.status_updated.emit(
-                    f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                start = (
+                    self.controllers['x'].read_position(),
+                    self.controllers['y'].read_position(),
+                    self.controllers['z'].read_position(),
                 )
+            except Exception:
+                start = (0.0, 0.0, 0.0)
+
+            try:
+                if self._move_axes(start, target, speed):
+                    self.status_updated.emit(
+                        f"Moved to ({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                    )
             except Exception as exc:  # pragma: no cover - hardware dependent
                 self.error_occurred.emit("PATH", str(exc))
 
@@ -175,21 +215,19 @@ class ManipulatorManager(QObject):
                 if not vertices:
                     return
                 total = len(vertices)
+                try:
+                    current = (
+                        self.controllers['x'].read_position(),
+                        self.controllers['y'].read_position(),
+                        self.controllers['z'].read_position(),
+                    )
+                except Exception:
+                    current = (0.0, 0.0, 0.0)
+
                 for idx, target in enumerate(vertices):
-                    self.controllers['x'].move_absolute(target[0], speed)
-                    self.controllers['y'].move_absolute(target[1], speed)
-                    self.controllers['z'].move_absolute(target[2], speed)
-
-                    wait_results = {
-                        'x': self.controllers['x'].wait_until_in_position(),
-                        'y': self.controllers['y'].wait_until_in_position(),
-                        'z': self.controllers['z'].wait_until_in_position(),
-                    }
-                    for axis, ok in wait_results.items():
-                        if not ok:
-                            self.error_occurred.emit(axis, "Failed to reach position")
-                            return
-
+                    if not self._move_axes(current, target, speed):
+                        return
+                    current = target
                     pct = (idx + 1) / total if total else 1.0
                     self.pattern_progress.emit(idx, pct, 0.0)
 
