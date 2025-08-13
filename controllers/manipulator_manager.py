@@ -3,7 +3,7 @@
 import threading
 import time
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -43,6 +43,10 @@ class ManipulatorManager(QObject):
         }
         self._monitoring = False
         self._monitor_thread = None
+        # Software offset applied to every vertex in execute_path.
+        # This is derived from the manipulator's position when a path starts
+        # executing so that any previously set hardware origin is ignored.
+        self._origin_offset: Optional[Tuple[float, float, float]] = None
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -82,6 +86,18 @@ class ManipulatorManager(QObject):
                 ctrl.disconnect()
             except Exception:  # pragma: no cover - best effort
                 pass
+
+    def reset_path_state(self) -> None:
+        """Clear any remembered path offset.
+
+        The manipulator's internal coordinate system can be re-zeroed by other
+        software.  When this happens we derive a software offset in
+        :meth:`execute_path` so DXF coordinates remain relative to the current
+        physical position.  Calling this method before starting a new pattern
+        discards the previous offset, preventing stale coordinates from
+        influencing subsequent paths.
+        """
+        self._origin_offset = None
 
     def _run_async(self, axis: str, action, *args):
         """Execute controller actions in a background thread.
@@ -224,6 +240,15 @@ class ManipulatorManager(QObject):
                 except Exception:
                     current_pos = (0.0, 0.0, 0.0)
 
+                # Establish software offset if not already set
+                if self._origin_offset is None:
+                    first = vertices[0]
+                    self._origin_offset = (
+                        current_pos[0] - first[0],
+                        current_pos[1] - first[1],
+                        current_pos[2] - first[2],
+                    )
+
                 total_dist = 0.0
                 for i in range(1, len(vertices)):
                     sx, sy, sz = vertices[i-1]
@@ -235,7 +260,12 @@ class ManipulatorManager(QObject):
 
                 elapsed = 0.0
                 for idx, target in enumerate(vertices):
-                    ok, dist = self._move_to(current_pos, target, speed)
+                    adjusted_target = (
+                        target[0] + self._origin_offset[0],
+                        target[1] + self._origin_offset[1],
+                        target[2] + self._origin_offset[2],
+                    )
+                    ok, dist = self._move_to(current_pos, adjusted_target, speed)
                     if not ok:
                         return
                     elapsed += dist
@@ -245,7 +275,7 @@ class ManipulatorManager(QObject):
                         self.pattern_progress.emit(idx, pct, remaining / speed)
                     else:
                         self.pattern_progress.emit(idx, pct, 0.0)
-                    current_pos = target
+                    current_pos = adjusted_target
 
                 self.pattern_completed.emit()
             except Exception as exc:  # pragma: no cover - hardware dependent
