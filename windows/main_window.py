@@ -1,6 +1,7 @@
 """Main application window for the miniMBE GUI."""
 
 import os
+import datetime
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -190,6 +191,7 @@ class MainWindow(QMainWindow):
         self._vertices = []      # list[(x_mm, y_mm, z_mm)] used for execution
         self._vertices_xy = []   # list[(x_mm, y_mm)] for plotting and preflight
         self._segments = []      # whatever your service provides; kept for canvas drawing
+        self._current_dxf_file = None
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -459,6 +461,7 @@ class MainWindow(QMainWindow):
 
     def _handle_dxf_loaded(self, filename, geometry):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
+        self._current_dxf_file = os.path.basename(filename)
 
         raw_vertices = geometry['movement']['vertices'] or []
         # Determine Z height; recipes currently keep a constant Z
@@ -553,8 +556,23 @@ class MainWindow(QMainWindow):
 
         first = self._vertices[0]
 
+        # Gather metadata about the current pattern for logging
+        xs = [p[0] for p in self._vertices_xy]
+        ys = [p[1] for p in self._vertices_xy]
+        bbox = {
+            "min": [min(xs), min(ys)],
+            "max": [max(xs), max(ys)],
+        } if self._vertices_xy else None
+        metadata = {
+            "time": datetime.datetime.now().isoformat(),
+            "event": "pattern_start",
+            "dxf_file": self._current_dxf_file,
+            "vertices": len(self._vertices_xy),
+            "bbox": bbox,
+        }
+
         if not self.modbus_panel.logging_active:
-            self.modbus_panel.start_log(auto=True)
+            self.modbus_panel.start_log(auto=True, preamble=metadata)
 
         def _after_start(_target):
             self.manager.point_reached.disconnect(_after_start)
