@@ -34,7 +34,7 @@ BACKLASH_ADDR        = 72
 MIN_AXIS_VELOCITY = 1e-4  # mm/s
 MAX_AXIS_VELOCITY = 1.0    # mm/s
 VELOCITY_THRESHOLD = 5e-5  # Threshold for rounding to zero
-EPSILON = 1e-6  # Positional tolerance in millimeters
+EPSILON = 1e-4  # Positional tolerance in millimeters
 
 # ----------------------------------------------------------------------
 # Helper Functions
