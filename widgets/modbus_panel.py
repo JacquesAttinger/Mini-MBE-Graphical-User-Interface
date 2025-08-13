@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import datetime
 import json
+from pathlib import Path
 from typing import Dict
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFileDialog,
     QGroupBox,
     QLabel,
     QPushButton,
@@ -53,13 +53,15 @@ class ModbusPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._log: list[Dict[str, str]] = []
+        self._logging_active = False
+        self._auto_logging = False
 
         layout = QVBoxLayout(self)
 
-        # Save button
-        self.save_btn = QPushButton("Save Log")
-        self.save_btn.clicked.connect(self._save_log)
-        layout.addWidget(self.save_btn)
+        # Start/Stop log button
+        self.log_btn = QPushButton("Start Log")
+        self.log_btn.clicked.connect(self._toggle_logging)
+        layout.addWidget(self.log_btn)
 
         # Filter which actions are recorded
         self._action_enabled: dict[str, bool] = {cmd: True for cmd in self.COMMANDS}
@@ -103,7 +105,7 @@ class ModbusPanel(QWidget):
         boxes = self._ensure_axis(axis)
         if action in boxes:
             boxes[action].update_content(description, raw)
-        if not self._action_enabled.get(action, True):
+        if not self._logging_active:
             return
         entry = {
             "time": datetime.datetime.now().isoformat(),
@@ -120,7 +122,8 @@ class ModbusPanel(QWidget):
             "axis": axis,
             "error": message,
         }
-        self._log.append(entry)
+        if self._logging_active:
+            self._log.append(entry)
         label = QLabel(f"{axis.upper()}: {message}")
         label.setWordWrap(True)
         self._error_layout.insertWidget(self._error_layout.count() - 1, label)
@@ -151,22 +154,46 @@ class ModbusPanel(QWidget):
                 axis_boxes[action].setVisible(enabled)
 
     # ------------------------------------------------------------------
-    def _save_log(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Modbus Log", "modbus_log.json", "JSON Files (*.json)"
-        )
-        if not path:
+    def _toggle_logging(self) -> None:
+        if self._logging_active:
+            self.stop_log()
+        else:
+            self.start_log()
+
+    def start_log(self, auto: bool = False) -> None:
+        """Begin capturing Modbus events."""
+        self._log = []
+        self._logging_active = True
+        self._auto_logging = auto
+        self.log_btn.setText("Stop Log")
+
+    def stop_log(self) -> None:
+        """Stop logging and save collected events to disk."""
+        if not self._logging_active:
             return
+        self._logging_active = False
+        self.log_btn.setText("Start Log")
+
+        log_dir = Path("modbus logs")
+        log_dir.mkdir(exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        mode = "auto" if self._auto_logging else "manual"
+        path = log_dir / f"modbus_log_{mode}_{ts}.json"
+
         data = [
             e
             for e in self._log
             if e.get("action") is None or self._action_enabled.get(e.get("action"), True)
         ]
-        data = [
-            e
-            for e in self._log
-            if e.get("action") is None or self._action_enabled.get(e.get("action"), True)
-        ]
-        with open(path, "w", encoding="utf-8") as fh:
+        with path.open("w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
+        self._auto_logging = False
+
+    @property
+    def logging_active(self) -> bool:
+        return self._logging_active
+
+    @property
+    def auto_logging_active(self) -> bool:
+        return self._logging_active and self._auto_logging
 
