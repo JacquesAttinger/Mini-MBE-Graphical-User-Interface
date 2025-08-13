@@ -174,9 +174,14 @@ class ManipulatorController:
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
+            # Ensure a fresh 0->1 transition for each move
+            time.sleep(0.05)
+            res = self.client.write_register(address=START_REQ_ADDR, value=0, slave=self.slave_id)
+            if res.isError():
+                raise RuntimeError("Failed to reset start request.")
             raw = (
                 f"{MOVE_TYPE_ADDR}=1; {TARGET_POS_ADDR}={pos_regs};"
-                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1"
+                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1->0"
             )
             self._last_speed = axis_speed
             desc = f"Move to {position} mm @ {axis_speed} mm/s"
@@ -200,9 +205,14 @@ class ManipulatorController:
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
+            # Ensure a fresh 0->1 transition for each move
+            time.sleep(0.05)
+            res = self.client.write_register(address=START_REQ_ADDR, value=0, slave=self.slave_id)
+            if res.isError():
+                raise RuntimeError("Failed to reset start request.")
             raw = (
                 f"{MOVE_TYPE_ADDR}=2; {TARGET_POS_ADDR}={dist_regs};"
-                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1"
+                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1->0"
             )
             desc = f"Move by {distance} mm @ {axis_speed} mm/s"
             self._log("move_relative", desc, raw)
