@@ -465,9 +465,19 @@ class MainWindow(QMainWindow):
         z_val = raw_vertices[0][2] if raw_vertices and len(raw_vertices[0]) > 2 else 0.0
 
         # Clean path for display/preflight (2D) and build 3D path for motion
-        self._vertices_xy = self._sanitize_vertices(raw_vertices, eps=1e-6, close_path=True)
+        # Do not force-append the starting vertex; if the DXF already contains
+        # a closing vertex we strip it so the manipulator doesn't attempt an
+        # automatic return move that can trigger position errors.
+        self._vertices_xy = self._sanitize_vertices(
+            raw_vertices, eps=1e-6, close_path=False
+        )
+        if self._vertices_xy and _almost_equal(self._vertices_xy[0], self._vertices_xy[-1]):
+            self._vertices_xy = self._vertices_xy[:-1]
         self._vertices = [(x, y, z_val) for x, y in self._vertices_xy]
         self._segments = geometry['movement'].get('segments', [])
+        if self._segments:
+            max_index = len(self._vertices_xy) - 1
+            self._segments = [min(s, max_index) for s in self._segments]
 
         if not self._vertices_xy:
             self.start_pattern_btn.setEnabled(False)
@@ -558,10 +568,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.pause_pattern_btn.setEnabled(True)
                 try:
-                    is_closed = _almost_equal(self._vertices[0], self._vertices[-1])
-                    path = self._vertices[1:-1] if is_closed else self._vertices[1:]
-                    self._closing_leg = self._vertices[0] if is_closed else None
-                    self._closing_speed = speed
+                    path = self._vertices[1:]
                     self.manager.execute_path(path, speed)
                 except Exception as exc:
                     self.start_pattern_btn.setEnabled(True)
@@ -596,26 +603,12 @@ class MainWindow(QMainWindow):
     def _handle_pattern_completed(self):
         self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
 
-        def _finalize():
-            self.status_panel.log_message("Pattern completed")
-            self.start_pattern_btn.setEnabled(True)
-            self.pause_pattern_btn.setEnabled(False)
-            self.pause_pattern_btn.setText("Pause Pattern")
-            if self.modbus_panel.auto_logging_active:
-                self.modbus_panel.stop_log()
-            try:
-                self.manager.point_reached.disconnect(_finalize)
-            except TypeError:
-                pass
-
-        if getattr(self, "_closing_leg", None) is not None:
-            self.manager.point_reached.connect(_finalize)
-            self.manager.move_to_point(
-                self._closing_leg, getattr(self, "_closing_speed", 0.0)
-            )
-            self._closing_leg = None
-        else:
-            _finalize()
+        self.status_panel.log_message("Pattern completed")
+        self.start_pattern_btn.setEnabled(True)
+        self.pause_pattern_btn.setEnabled(False)
+        self.pause_pattern_btn.setText("Pause Pattern")
+        if self.modbus_panel.auto_logging_active:
+            self.modbus_panel.stop_log()
 
     # ------------------------------------------------------------------
     # Qt events
