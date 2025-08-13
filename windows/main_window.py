@@ -289,7 +289,7 @@ class MainWindow(QMainWindow):
         for axis in ["x", "y", "z"]:
             axis_control = AxisControlWidget(axis.upper(), self.controllers[axis])
             axis_control.move_requested.connect(
-                lambda pos, vel, a=axis: self.manager.move_axis(a, pos, vel)
+                lambda pos, spd, a=axis: self.manager.move_axis(a, pos, spd)
             )
             axis_control.stop_requested.connect(
                 lambda a=axis: self.manager.emergency_stop(a)
