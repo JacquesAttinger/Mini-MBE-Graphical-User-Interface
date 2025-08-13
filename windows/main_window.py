@@ -534,7 +534,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.pause_pattern_btn.setEnabled(True)
                 try:
-                    self.manager.execute_path(self._vertices, speed)
+                    self.manager.execute_path(self._vertices[1:], speed)
                 except Exception as exc:
                     self.start_pattern_btn.setEnabled(True)
                     self.pause_pattern_btn.setEnabled(False)
