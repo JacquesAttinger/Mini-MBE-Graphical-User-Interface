@@ -1,0 +1,686 @@
+[
+  {
+    "time": "2025-08-13T11:30:17.111690",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.05006265640258789",
+    "raw": "18->[3712, 48461]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.127445",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.05006265640258789",
+    "raw": "18->[3712, 48461]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.151172",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 0.04993748664855957",
+    "raw": "18->[35648, 15692]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.180672",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 0.04993748664855957",
+    "raw": "18->[35648, 15692]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.200702",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.246441",
+    "axis": "x",
+    "action": "motor_on",
+    "description": "Motor ON",
+    "raw": "14=1"
+  },
+  {
+    "time": "2025-08-13T11:30:17.257231",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.387680",
+    "axis": "x",
+    "action": "move_absolute",
+    "description": "Move to 3.1e-18 mm @ 0.009999992203722635 mm/s",
+    "raw": "0=1; 2=[48472, 8804]; 8=[55042, 15395]; 15=1"
+  },
+  {
+    "time": "2025-08-13T11:30:17.442113",
+    "axis": "y",
+    "action": "motor_on",
+    "description": "Motor ON",
+    "raw": "14=1"
+  },
+  {
+    "time": "2025-08-13T11:30:17.587857",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.04850006103515625",
+    "raw": "18->[43008, 48454]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.614213",
+    "axis": "y",
+    "action": "move_absolute",
+    "description": "Move to 0.05 mm @ 1.2487012714742456e-05 mm/s",
+    "raw": "0=1; 2=[52429, 15692]; 8=[32592, 14161]; 15=1"
+  },
+  {
+    "time": "2025-08-13T11:30:17.667534",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.04770326614379883",
+    "raw": "18->[25728, 48451]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.677688",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 0.04900002479553223",
+    "raw": "18->[46144, 15688]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.737880",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:17.777642",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.04660940170288086",
+    "raw": "18->[59776, 48446]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.067953",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.04375004768371582",
+    "raw": "18->[13120, 48435]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.097174",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.127758",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.323864",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.04115629196166992",
+    "raw": "18->[37760, 48424]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.463665",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.03985953330993652",
+    "raw": "18->[17344, 48419]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.519210",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.544760",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.851956",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.03600001335144043",
+    "raw": "18->[29888, 48403]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.864091",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.035906314849853516",
+    "raw": "18->[4736, 48403]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.883835",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:18.920590",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.244736",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.03215622901916504",
+    "raw": "18->[46656, 48387]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.271468",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.290279",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.410302",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.030453205108642578",
+    "raw": "18->[30976, 48377]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.605418",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.028609514236450195",
+    "raw": "18->[24192, 48362]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.628135",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:19.636187",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.011976",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.024656295776367188",
+    "raw": "18->[64512, 48329]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.030884",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.024359464645385742",
+    "raw": "18->[36224, 48327]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.051885",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.077610",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.418477",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.020609378814697266",
+    "raw": "18->[54528, 48296]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.457251",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.512295",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.562788",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.019109487533569336",
+    "raw": "18->[35712, 48284]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.837175",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.016359329223632812",
+    "raw": "18->[1024, 48262]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.904972",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:20.929635",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.102416",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.013750076293945312",
+    "raw": "18->[18432, 48225]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.262445",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.012062549591064453",
+    "raw": "18->[41472, 48197]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.288471",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.307739",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.623226",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.008499860763549805",
+    "raw": "18->[17152, 48139]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.640244",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.008406400680541992",
+    "raw": "18->[47872, 48137]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.678441",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:21.714038",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.038528",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.004453182220458984",
+    "raw": "18->[60416, 48017]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.066076",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.085151",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.207401",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.002859354019165039",
+    "raw": "18->[25600, 47931]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.414299",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position -0.0007030963897705078",
+    "raw": "18->[20480, 47672]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.454894",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.510467",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.774550",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.795327",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.829923",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.849941",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.865542",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:22.888118",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.210393",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.261285",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.286582",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.370904",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.601391",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.618031",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.660962",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:23.946583",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.001435",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.028982",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.052027",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.366430",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.385150",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.423377",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.527758",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.747690",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.772811",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:24.794857",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.073298",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.082812",
+    "axis": "y",
+    "action": "error",
+    "description": "Motion never started",
+    "raw": "status=114"
+  },
+  {
+    "time": "2025-08-13T11:30:25.101770",
+    "axis": "y",
+    "error": "Motion never started"
+  },
+  {
+    "time": "2025-08-13T11:30:25.119805",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.132789",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.208236",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.517876",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.543184",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.574889",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.883675",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:25.945704",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:26.003588",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  },
+  {
+    "time": "2025-08-13T11:30:26.319307",
+    "axis": "x",
+    "action": "read_position",
+    "description": "Position 0.0",
+    "raw": "18->[0, 0]"
+  },
+  {
+    "time": "2025-08-13T11:30:26.346812",
+    "axis": "y",
+    "action": "read_position",
+    "description": "Position 4.673004150390625e-05",
+    "raw": "18->[0, 14404]"
+  },
+  {
+    "time": "2025-08-13T11:30:26.364855",
+    "axis": "z",
+    "action": "read_position",
+    "description": "Position 32.799530029296875",
+    "raw": "18->[12984, 16899]"
+  }
+]
