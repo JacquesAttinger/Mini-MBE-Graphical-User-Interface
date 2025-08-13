@@ -12,7 +12,8 @@ class DxfService(QObject):
     dxf_loaded = Signal(str, object)
     error_occurred = Signal(str)
 
-    def load_dxf(self, filename: str, scale: float = 1.0, z_height: float | None = None):
+    def load_dxf(self, filename: str, scale: float = 1.0,
+                 z_height: float | None = None, origin=(0.0, 0.0)):
         """Load a DXF file in a background thread.
 
         Parameters
@@ -26,6 +27,9 @@ class DxfService(QObject):
             provided the recipe will default to ``0.0``.  Callers should supply
             the manipulator's current Z position to avoid unintended vertical
             motion.
+        origin:
+            ``(x, y)`` tuple specifying where the DXF's origin should be placed
+            in the workspace.
         """
 
         def worker():
@@ -35,6 +39,7 @@ class DxfService(QObject):
                     resolution=1.0,
                     scale=scale,
                     z_height=z_height if z_height is not None else 0.0,
+                    origin=origin,
                 )
                 self.dxf_loaded.emit(filename, data)
             except Exception as exc:  # pragma: no cover - dependent on DXF file
