@@ -1,7 +1,6 @@
 """High level manager for multiple manipulator axes."""
 
 import logging
-import math
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -11,8 +10,8 @@ from PySide6.QtCore import QObject, Signal
 from controllers.smcd14_controller import (
     ManipulatorController,
     MotionNeverStartedError,
-    adjust_axis_velocity,
 )
+from utils.speed import adjust_axis_speed
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -149,10 +148,10 @@ class ManipulatorManager(QObject):
     # ------------------------------------------------------------------
     # Movement commands
     # ------------------------------------------------------------------
-    def move_axis(self, axis: str, position: float, velocity: float):
+    def move_axis(self, axis: str, position: float, speed: float):
         """Move an individual axis in a worker thread."""
 
-        def action(ctrl, position, velocity):
+        def action(ctrl, position, speed):
             try:
                 current = ctrl.read_position()
             except Exception:
@@ -163,7 +162,8 @@ class ManipulatorManager(QObject):
                 ctrl.motor_on()
             except Exception:
                 pass
-            ctrl.move_absolute(position, velocity)
+            axis_speed = adjust_axis_speed(abs(speed))
+            ctrl.move_absolute(position, axis_speed)
             try:
                 ok = ctrl.wait_until_in_position(target=position)
             except MotionNeverStartedError as exc:
@@ -191,7 +191,7 @@ class ManipulatorManager(QObject):
                 raise RuntimeError(msg)
             return f"{axis.upper()} moved to {position:.3f} mm"
 
-        self._run_async(axis, action, position, velocity)
+        self._run_async(axis, action, position, speed)
 
     def emergency_stop(self, axis: str):
         """Trigger emergency stop on a specific axis."""
@@ -222,13 +222,12 @@ class ManipulatorManager(QObject):
     ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
-        Each active axis moves at the requested ``speed`` in the direction of
-        travel.  The previous behavior scaled per-axis velocities based on the
+        Each active axis moves at the requested ``speed`` toward its target
+        position.  The previous behavior scaled per-axis velocities based on the
         relative displacement of each axis which could result in extremely slow
         speeds when one axis had only a small travel component.  By using the
-        same speed for all axes (with sign determined by direction), no axis
-        is artificially slowed and short moves no longer exceed controller
-        timeouts.
+        same speed for all axes, no axis is artificially slowed and short moves
+        no longer exceed controller timeouts.
 
         Returns ``True`` if all commanded axes reported they reached their
         destination. If an axis fails the corresponding error signal is emitted
@@ -250,7 +249,7 @@ class ManipulatorManager(QObject):
         for idx, axis in enumerate(("x", "y", "z")):
             delta = deltas[idx]
             if abs(delta) > EPSILON:
-                axis_speed = adjust_axis_velocity(math.copysign(speed, delta))
+                axis_speed = adjust_axis_speed(abs(speed))
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
@@ -265,10 +264,10 @@ class ManipulatorManager(QObject):
                         axis_speed,
                     )
                 ctrl.move_absolute(target[idx], axis_speed)
-                if hasattr(ctrl, "_last_velocity"):
+                if hasattr(ctrl, "_last_speed"):
                     assert (
-                        abs(ctrl._last_velocity - axis_speed) <= EPSILON
-                    ), f"{axis} velocity mismatch"
+                        abs(ctrl._last_speed - axis_speed) <= EPSILON
+                    ), f"{axis} speed mismatch"
                 self._log_event(
                     axis,
                     "move",

@@ -5,10 +5,9 @@ import struct
 import time
 from threading import Lock
 
-import math
-
 from pymodbus.client import ModbusTcpClient
 from typing import Optional
+from utils.speed import adjust_axis_speed
 
 # Quiet noisy auto-reconnect warnings from pymodbus
 logging.getLogger("pymodbus").setLevel(logging.ERROR)
@@ -18,7 +17,7 @@ logging.getLogger("pymodbus").setLevel(logging.ERROR)
 # ----------------------------------------------------------------------
 MOVE_TYPE_ADDR       = 0
 TARGET_POS_ADDR      = 2
-TARGET_VEL_ADDR      = 8
+TARGET_SPEED_ADDR    = 8
 START_REQ_ADDR       = 15
 MOTOR_ON_ADDR        = 14
 STATUS_ADDR          = 17
@@ -29,11 +28,8 @@ CLEAR_REQ_ADDR       = 22
 BACKLASH_ADDR        = 72
 
 # ----------------------------------------------------------------------
-# Physical Velocity Constraints
+# Motion constraints
 # ----------------------------------------------------------------------
-MIN_AXIS_VELOCITY = 1e-4  # mm/s
-MAX_AXIS_VELOCITY = 1.0    # mm/s
-VELOCITY_THRESHOLD = 5e-5  # Threshold for rounding to zero
 EPSILON = 1e-4  # Positional tolerance in millimeters
 RUNNING_BIT_TIMEOUT = 2.0  # seconds to wait for running bit to assert
 
@@ -69,64 +65,6 @@ def registers_to_float(regs: list) -> float:
     packed = struct.pack('>HH', regs[1], regs[0])
     return struct.unpack('>f', packed)[0]
 
-def validate_velocity(velocity):
-        """Ensure the requested velocity is physically achievable."""
-        if velocity < MIN_AXIS_VELOCITY:
-            raise ValueError(f"Velocity too slow (min: {MIN_AXIS_VELOCITY} mm/s)")
-        
-        # Theoretical max: sqrt(3) * MAX_AXIS_VELOCITY when all 3 axes move at max speed
-        theoretical_max = math.sqrt(3) * MAX_AXIS_VELOCITY
-        if velocity > theoretical_max:
-            raise ValueError(
-                f"Requested velocity ({velocity} mm/s) exceeds maximum possible ({theoretical_max:.3f} mm/s) "
-                f"for diagonal moves (all axes at {MAX_AXIS_VELOCITY} mm/s)"
-            )
-    
-def adjust_axis_velocity(v):
-    """Adjust individual axis velocity according to constraints"""
-    if abs(v) < VELOCITY_THRESHOLD:
-        return 0
-    elif abs(v) < MIN_AXIS_VELOCITY:
-        return math.copysign(MIN_AXIS_VELOCITY, v)
-    elif abs(v) > MAX_AXIS_VELOCITY:
-        return math.copysign(MAX_AXIS_VELOCITY, v)
-    return v
-
-def calculate_velocity_components(start_pos, end_pos, total_velocity):
-    """
-    Calculate velocity components for each axis with physical constraints
-    """
-    # Validate total velocity first
-    validate_velocity(total_velocity)
-    
-    dx = end_pos[0] - start_pos[0]
-    dy = end_pos[1] - start_pos[1]
-    dz = end_pos[2] - start_pos[2]
-    
-    distance = math.sqrt(dx**2 + dy**2 + dz**2)
-    if distance == 0:
-        return (0, 0, 0)
-        
-    # Calculate direction unit vector
-    ux = dx / distance
-    uy = dy / distance
-    uz = dz / distance
-    
-    # Scale by total velocity and apply constraints
-    vx = adjust_axis_velocity(ux * total_velocity)
-    vy = adjust_axis_velocity(uy * total_velocity)
-    vz = adjust_axis_velocity(uz * total_velocity)
-    
-    # Re-normalize if any components were clamped
-    actual_velocity = math.sqrt(vx**2 + vy**2 + vz**2)
-    if actual_velocity > 0 and actual_velocity < total_velocity:
-        scale = total_velocity / actual_velocity
-        vx = adjust_axis_velocity(vx * scale)
-        vy = adjust_axis_velocity(vy * scale)
-        vz = adjust_axis_velocity(vz * scale)
-    
-    return (vx, vy, vz)
-
 # ----------------------------------------------------------------------
 # Main Controller Class
 # ----------------------------------------------------------------------
@@ -152,7 +90,7 @@ class ManipulatorController:
         self.client = None
         self.loop = None  # asyncio event loop for PyModbus
         self._lock = Lock()
-        self._last_velocity = None
+        self._last_speed = None
 
     def _log(self, action: str, description: str, raw: str) -> None:
         if self.logger:
@@ -218,53 +156,55 @@ class ManipulatorController:
                 f"{MOTOR_ON_ADDR}=0",
             )
 
-    def move_absolute(self, position: float, velocity: float) -> None:
+    def move_absolute(self, position: float, speed: float) -> None:
         self._check_connection()
         with self._lock:
             res = self.client.write_register(address=MOVE_TYPE_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to set move type to absolute.")
             pos_regs = float_to_registers(position)
-            vel_regs = float_to_registers(velocity)
+            axis_speed = adjust_axis_speed(abs(speed))
+            speed_regs = float_to_registers(axis_speed)
             res = self.client.write_registers(address=TARGET_POS_ADDR, values=pos_regs, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to write target position.")
-            res = self.client.write_registers(address=TARGET_VEL_ADDR, values=vel_regs, slave=self.slave_id)
+            res = self.client.write_registers(address=TARGET_SPEED_ADDR, values=speed_regs, slave=self.slave_id)
             if res.isError():
-                raise RuntimeError("Failed to write target velocity.")
+                raise RuntimeError("Failed to write target speed.")
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
             raw = (
                 f"{MOVE_TYPE_ADDR}=1; {TARGET_POS_ADDR}={pos_regs};"
-                f" {TARGET_VEL_ADDR}={vel_regs}; {START_REQ_ADDR}=1"
+                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1"
             )
-            self._last_velocity = velocity
-            desc = f"Move to {position} mm @ {velocity} mm/s"
+            self._last_speed = axis_speed
+            desc = f"Move to {position} mm @ {axis_speed} mm/s"
             self._log("move_absolute", desc, raw)
 
-    def move_relative(self, distance: float, velocity: float) -> None:
+    def move_relative(self, distance: float, speed: float) -> None:
         self._check_connection()
         with self._lock:
             res = self.client.write_register(address=MOVE_TYPE_ADDR, value=2, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to set move type to relative.")
             dist_regs = float_to_registers(distance)
-            vel_regs  = float_to_registers(velocity)
+            axis_speed = adjust_axis_speed(abs(speed))
+            speed_regs  = float_to_registers(axis_speed)
             res = self.client.write_registers(address=TARGET_POS_ADDR, values=dist_regs, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to write relative distance.")
-            res = self.client.write_registers(address=TARGET_VEL_ADDR, values=vel_regs, slave=self.slave_id)
+            res = self.client.write_registers(address=TARGET_SPEED_ADDR, values=speed_regs, slave=self.slave_id)
             if res.isError():
-                raise RuntimeError("Failed to write target velocity.")
+                raise RuntimeError("Failed to write target speed.")
             res = self.client.write_register(address=START_REQ_ADDR, value=1, slave=self.slave_id)
             if res.isError():
                 raise RuntimeError("Failed to send start request.")
             raw = (
                 f"{MOVE_TYPE_ADDR}=2; {TARGET_POS_ADDR}={dist_regs};"
-                f" {TARGET_VEL_ADDR}={vel_regs}; {START_REQ_ADDR}=1"
+                f" {TARGET_SPEED_ADDR}={speed_regs}; {START_REQ_ADDR}=1"
             )
-            desc = f"Move by {distance} mm @ {velocity} mm/s"
+            desc = f"Move by {distance} mm @ {axis_speed} mm/s"
             self._log("move_relative", desc, raw)
 
     def emergency_stop(self) -> None:
