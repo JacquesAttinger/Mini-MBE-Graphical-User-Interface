@@ -155,7 +155,7 @@ class ManipulatorManager(QObject):
             except Exception:
                 pass
             ctrl.move_absolute(position, velocity)
-            if not ctrl.wait_until_in_position():
+            if not ctrl.wait_until_in_position(target=position):
                 raise RuntimeError("Failed to reach position")
             return f"{axis.upper()} moved to {position:.3f} mm"
 
@@ -214,10 +214,10 @@ class ManipulatorManager(QObject):
                 except Exception:
                     pass
                 ctrl.move_absolute(target[idx], axis_speed)
-                active_axes.append(axis)
+                active_axes.append((axis, target[idx]))
 
-        for axis in active_axes:
-            if not self.controllers[axis].wait_until_in_position():
+        for axis, pos in active_axes:
+            if not self.controllers[axis].wait_until_in_position(target=pos):
                 self.error_occurred.emit(axis, "Failed to reach position")
                 return False
         return True

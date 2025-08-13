@@ -8,6 +8,7 @@ from threading import Lock
 import math
 
 from pymodbus.client import ModbusTcpClient
+from typing import Optional
 
 # Quiet noisy auto-reconnect warnings from pymodbus
 logging.getLogger("pymodbus").setLevel(logging.ERROR)
@@ -33,6 +34,7 @@ BACKLASH_ADDR        = 72
 MIN_AXIS_VELOCITY = 1e-4  # mm/s
 MAX_AXIS_VELOCITY = 1.0    # mm/s
 VELOCITY_THRESHOLD = 5e-5  # Threshold for rounding to zero
+EPSILON = 1e-6  # Positional tolerance in millimeters
 
 # ----------------------------------------------------------------------
 # Helper Functions
@@ -280,50 +282,49 @@ class ManipulatorController:
                 f"{CLEAR_REQ_ADDR}=1->0",
             )
 
-    def wait_until_in_position(self, timeout: float = 15.0) -> bool:
+    def wait_until_in_position(self, timeout: float = 15.0, target: Optional[float] = None) -> bool:
         self._check_connection()
-        overall_start = time.time()
+        last_change = time.time()
         motion_started = False
-        # Track movement so a long travel does not trigger a timeout while the
-        # axis is still progressing toward the target.
         try:
             last_pos = self.read_position()
         except Exception:
             last_pos = None
 
-        # Wait briefly for motion to begin (bit 16 clears)
-        while (time.time() - overall_start) < 1.0:
-            status_val = self._read_status()
-            if not (status_val & 16):
-                motion_started = True
-                break
-            time.sleep(0.05)
-
-        start_time = time.time() if motion_started else overall_start
-
         while True:
             status_val = self._read_status()
-            if motion_started:
-                if status_val & 16:
+            try:
+                curr_pos = self.read_position()
+            except Exception:
+                curr_pos = None
+
+            if (
+                target is not None
+                and curr_pos is not None
+                and abs(curr_pos - target) <= EPSILON
+                and status_val & 16
+            ):
+                return True
+
+            if not motion_started and not (status_val & 16):
+                motion_started = True
+                last_change = time.time()
+
+            if (
+                curr_pos is not None
+                and (last_pos is None or abs(curr_pos - last_pos) > EPSILON)
+            ):
+                motion_started = True
+                last_pos = curr_pos
+                last_change = time.time()
+
+            if motion_started and status_val & 16:
+                if target is None or curr_pos is None or abs(curr_pos - target) <= EPSILON:
                     return True
-            else:
-                if not (status_val & 16):
-                    motion_started = True
-                    start_time = time.time()
 
-            if motion_started:
-                try:
-                    curr_pos = self.read_position()
-                except Exception:
-                    curr_pos = None
-                if (
-                    curr_pos is not None
-                    and (last_pos is None or abs(curr_pos - last_pos) > 1e-4)
-                ):
-                    last_pos = curr_pos
-                    start_time = time.time()
-
-            if (time.time() - start_time) >= timeout:
+            if (time.time() - last_change) >= timeout:
+                if target is not None and curr_pos is not None and abs(curr_pos - target) <= EPSILON:
+                    return True
                 return False
             time.sleep(0.5)
 
