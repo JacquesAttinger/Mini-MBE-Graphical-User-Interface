@@ -60,8 +60,14 @@ def test_small_delta_uses_full_speed():
     start = (0.0, 0.0, 0.0)
     target = (0.1, 100.0, 0.0)
     assert mgr._move_axes(start, target, 0.01)
-    assert mgr.controllers['x']._last_speed == pytest.approx(0.01)
+    assert mgr.controllers['x']._last_speed == 0.0
     assert mgr.controllers['y']._last_speed == pytest.approx(0.01)
+    total = (
+        mgr.controllers['x']._last_speed**2 +
+        mgr.controllers['y']._last_speed**2 +
+        (mgr.controllers['z']._last_speed or 0.0)**2
+    ) ** 0.5
+    assert total == pytest.approx(0.01)
 
 
 def test_execute_path_logs_start_and_end():
