@@ -271,7 +271,17 @@ class ManipulatorController:
                 and in_pos
                 and time.time() > running_deadline
             ):
-                raise MotionNeverStartedError("Motion never started")
+                # Record diagnostic information before raising so calling
+                # code can see the controller state that caused the failure.
+                err = self.read_error_code()
+                self._log(
+                    "error",
+                    f"Motion never started (err={err}, status={status_val})",
+                    f"{STATUS_ADDR}->{status_val}; {ERROR_CODE_ADDR}->{err}",
+                )
+                raise MotionNeverStartedError(
+                    f"Motion never started (err={err}, status={status_val})"
+                )
 
             if (
                 curr_pos is not None
