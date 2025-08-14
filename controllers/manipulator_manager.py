@@ -167,13 +167,17 @@ class ManipulatorManager(QObject):
             try:
                 ok = ctrl.wait_until_in_position(target=position)
             except MotionNeverStartedError as exc:
+                # Immediately capture diagnostic registers so the log shows
+                # the controller state at the moment the start request was
+                # ignored.
                 status = ctrl._read_status()
+                err = ctrl.read_error_code()
                 msg = str(exc)
                 self._log_event(
                     axis,
                     "error",
                     msg,
-                    f"status={status}",
+                    f"err={err};status={status}",
                 )
                 raise
             if not ok:
@@ -281,13 +285,16 @@ class ManipulatorManager(QObject):
             try:
                 ok = ctrl.wait_until_in_position(target=pos)
             except MotionNeverStartedError as exc:
+                # Capture diagnostic registers right away to record the
+                # controller state responsible for ignoring the move command.
                 status = ctrl._read_status()
+                err = ctrl.read_error_code()
                 msg = str(exc)
                 self._log_event(
                     axis,
                     "error",
                     msg,
-                    f"status={status}",
+                    f"err={err};status={status}",
                 )
                 self.error_occurred.emit(axis, msg)
                 return False
