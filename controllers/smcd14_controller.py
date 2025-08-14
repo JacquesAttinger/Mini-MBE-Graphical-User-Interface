@@ -4,6 +4,7 @@ import logging
 import struct
 import time
 from threading import Lock
+from contextlib import nullcontext
 
 from pymodbus.client import ModbusTcpClient
 from typing import Optional
@@ -209,25 +210,17 @@ class ManipulatorController:
     def emergency_stop(self) -> None:
         self._check_connection()
         with self._lock:
-            res = self.client.write_register(address=STOP_REQ_ADDR, value=1, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Emergency stop failed.")
+            self._pulse_register(STOP_REQ_ADDR)
             self._log(
                 "emergency_stop",
                 "Emergency stop",
-                f"{STOP_REQ_ADDR}=1",
+                f"{STOP_REQ_ADDR}=1->0",
             )
 
     def clear_error(self) -> None:
         self._check_connection()
         with self._lock:
-            res = self.client.write_register(address=CLEAR_REQ_ADDR, value=1, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to clear error (step 1).")
-            time.sleep(0.1)
-            res = self.client.write_register(address=CLEAR_REQ_ADDR, value=0, slave=self.slave_id)
-            if res.isError():
-                raise RuntimeError("Failed to clear error (step 2).")
+            self._pulse_register(CLEAR_REQ_ADDR)
             self._log(
                 "clear_error",
                 "Clear error",
@@ -344,34 +337,33 @@ class ManipulatorController:
         return val
 
     # Internal helper methods
-    def _pulse_start_req(self) -> None:
-        """Issue a start request pulse (0→1→0) and wait until cleared."""
+    def _pulse_register(self, address: int, lock: Optional[Lock] = None) -> None:
+        """Pulse a register (0→1→0) and wait until it clears."""
         self._check_connection()
-        with self._start_lock:
-            res = self.client.write_register(
-                address=START_REQ_ADDR, value=1, slave=self.slave_id
-            )
+        ctx = lock if lock is not None else nullcontext()
+        with ctx:
+            res = self.client.write_register(address=address, value=1, slave=self.slave_id)
             if res.isError():
-                raise RuntimeError("Failed to send start request.")
-            # Allow time for the controller to latch the start request
+                raise RuntimeError(f"Failed to set register {address}.")
+            # Allow time for the controller to latch the request
             time.sleep(0.05)
-            res = self.client.write_register(
-                address=START_REQ_ADDR, value=0, slave=self.slave_id
-            )
+            res = self.client.write_register(address=address, value=0, slave=self.slave_id)
             if res.isError():
-                raise RuntimeError("Failed to reset start request.")
+                raise RuntimeError(f"Failed to reset register {address}.")
             deadline = time.time() + 1.0
             while True:
-                res = self.client.read_holding_registers(
-                    address=START_REQ_ADDR, count=1, slave=self.slave_id
-                )
+                res = self.client.read_holding_registers(address=address, count=1, slave=self.slave_id)
                 if res.isError():
-                    raise RuntimeError("Failed to read start request register.")
+                    raise RuntimeError(f"Failed to read register {address}.")
                 if res.registers[0] == 0:
                     break
                 if time.time() > deadline:
-                    raise RuntimeError("Start request register did not clear.")
+                    raise RuntimeError(f"Register {address} did not clear.")
                 time.sleep(0.01)
+
+    def _pulse_start_req(self) -> None:
+        """Issue a start request pulse using the dedicated lock."""
+        self._pulse_register(START_REQ_ADDR, lock=self._start_lock)
 
     def _read_status(self) -> int:
         regs = self._read_registers(address=STATUS_ADDR, count=1)
