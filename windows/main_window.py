@@ -190,7 +190,6 @@ class MainWindow(QMainWindow):
         # Store both 3D vertices for motion and 2D vertices for display/checks
         self._vertices = []      # list[(x_mm, y_mm, z_mm)] used for execution
         self._vertices_xy = []   # list[(x_mm, y_mm)] for plotting and preflight
-        self._segments = []      # whatever your service provides; kept for canvas drawing
         self._current_dxf_file = None
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
@@ -473,10 +472,6 @@ class MainWindow(QMainWindow):
             raw_vertices, eps=1e-6, close_path=True
         )
         self._vertices = [(x, y, z_val) for x, y in self._vertices_xy]
-        self._segments = geometry['movement'].get('segments', [])
-        if self._segments:
-            max_index = len(self._vertices_xy) - 1
-            self._segments = [min(s, max_index) for s in self._segments]
 
         if not self._vertices_xy:
             self.start_pattern_btn.setEnabled(False)
@@ -608,8 +603,7 @@ class MainWindow(QMainWindow):
             self.pause_pattern_btn.setText("Pause Pattern")
             self.status_panel.log_message("Pattern resumed")
 
-    def _update_pattern_progress(self, index, pct, remaining):
-        self.position_canvas.draw_path_progress(index, self._vertices_xy, self._segments)
+    def _update_pattern_progress(self, _index, pct, remaining):
         self.progress_label.setText(
             f"Pattern progress: {pct*100:.1f}% | {remaining:.1f}s remaining"
         )

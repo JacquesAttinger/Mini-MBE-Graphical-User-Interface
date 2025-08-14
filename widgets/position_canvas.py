@@ -20,9 +20,6 @@ class EnhancedPositionCanvas(FigureCanvas):
         self.view_center = [0, 0]
         self.pan_start = None
         self.pan_sensitivity = 0.5
-        # store matplotlib line objects for rendered path segments
-        # use lists so progress drawing can safely clear them
-        self._path_lines = {'completed': [], 'upcoming': []}
         self._dxf_lines = []
         self._pos_text = None
 
@@ -230,81 +227,6 @@ class EnhancedPositionCanvas(FigureCanvas):
             va='bottom',
             zorder=11
         )
-        
-        self.fig.canvas.draw_idle()
-
-    def draw_path_progress(self, current_index, vertices, segment_boundaries):
-        """Only connect points that were originally connected"""
-        completed = self._path_lines.get('completed') or []
-        upcoming = self._path_lines.get('upcoming') or []
-
-        # Clear previously drawn path segments
-        for line in completed + upcoming:
-            if line in self.ax.lines:
-                line.remove()
-        self._path_lines = {'completed': [], 'upcoming': []}
-        
-        if not vertices or current_index < 0:
-            return
-        
-        # Find current segment
-        current_segment = 0
-        while (current_segment < len(segment_boundaries) and 
-            current_index > segment_boundaries[current_segment]):
-            current_segment += 1
-        
-        # Draw completed segments (green)
-        if current_segment > 0:
-            start_idx = 0
-            for seg_end in segment_boundaries[:current_segment]:
-                seg_verts = vertices[start_idx:seg_end+1]
-                if len(seg_verts) > 1:
-                    line = self.ax.plot(
-                        [v[0] for v in seg_verts],
-                        [v[1] for v in seg_verts],
-                        'g-', alpha=0.5, linewidth=2, zorder=6
-                    )[0]
-                    self._path_lines['completed'].append(line)
-                start_idx = seg_end + 1
-        
-        # Draw current segment (yellow)
-        if current_segment < len(segment_boundaries):
-            seg_start = 0 if current_segment == 0 else segment_boundaries[current_segment-1]+1
-            seg_end = segment_boundaries[current_segment]
-            current_seg_verts = vertices[seg_start:min(current_index, seg_end)+1]
-            if len(current_seg_verts) > 1:
-                line = self.ax.plot(
-                    [v[0] for v in current_seg_verts],
-                    [v[1] for v in current_seg_verts],
-                    'y-', alpha=0.7, linewidth=2, zorder=7
-                )[0]
-                self._path_lines['completed'].append(line)
-        
-        # Draw upcoming segments (blue)
-        if current_segment < len(segment_boundaries):
-            # Remaining in current segment
-            if current_index < segment_boundaries[current_segment]:
-                remaining_verts = vertices[current_index:segment_boundaries[current_segment]+1]
-                if len(remaining_verts) > 1:
-                    line = self.ax.plot(
-                        [v[0] for v in remaining_verts],
-                        [v[1] for v in remaining_verts],
-                        'b--', alpha=0.3, linewidth=1, zorder=6
-                    )[0]
-                    self._path_lines['upcoming'].append(line)
-            
-            # Future segments
-            for seg_end in segment_boundaries[current_segment+1:]:
-                seg_start = segment_boundaries[current_segment]+1
-                seg_verts = vertices[seg_start:seg_end+1]
-                if len(seg_verts) > 1:
-                    line = self.ax.plot(
-                        [v[0] for v in seg_verts],
-                        [v[1] for v in seg_verts],
-                        'b--', alpha=0.3, linewidth=1, zorder=6
-                    )[0]
-                    self._path_lines['upcoming'].append(line)
-                current_segment += 1
         
         self.fig.canvas.draw_idle()
 
