@@ -226,20 +226,20 @@ class ManipulatorManager(QObject):
     ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
-        Each active axis moves at the requested ``speed`` toward its target
-        position.  The previous behavior scaled per-axis velocities based on the
-        relative displacement of each axis which could result in extremely slow
-        speeds when one axis had only a small travel component.  By using the
-        same speed for all axes, no axis is artificially slowed and short moves
-        no longer exceed controller timeouts.
+        Each active axis moves toward its target position at a speed scaled by
+        its proportion of the total travel distance.  This keeps the overall
+        velocity of the 3D move equal to ``speed`` regardless of how far each
+        axis needs to move.
 
         Returns ``True`` if all commanded axes reported they reached their
         destination. If an axis fails the corresponding error signal is emitted
         and ``False`` is returned.
         """
 
-        deltas = [target[i] - start[i] for i in range(3)]
-        distance = (deltas[0] ** 2 + deltas[1] ** 2 + deltas[2] ** 2) ** 0.5
+        dx = target[0] - start[0]
+        dy = target[1] - start[1]
+        dz = target[2] - start[2]
+        distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
         if distance <= EPSILON:
             self._log_event(
                 "ALL",
@@ -249,11 +249,12 @@ class ManipulatorManager(QObject):
             )
             return True
 
+        deltas = [dx, dy, dz]
         active_axes = []
         for idx, axis in enumerate(("x", "y", "z")):
             delta = deltas[idx]
             if abs(delta) > EPSILON:
-                axis_speed = adjust_axis_speed(abs(speed))
+                axis_speed = adjust_axis_speed(abs(speed * delta / distance))
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
