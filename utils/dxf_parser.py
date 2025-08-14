@@ -192,12 +192,14 @@ def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True,
     display_paths = []
     movement_vertices = []
     segment_boundaries = []
-    
+    commands = []
+    prev_end = None
+
     for path in paths:
         # Convert path to display coordinates
         display_path = []
         movement_path = []
-        
+
         for i in range(len(path)):
             x, y = path[i]
             x *= scale
@@ -210,12 +212,23 @@ def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True,
             display_path.append((x, y))
             movement_path.append((x, y, z_height))
 
+        if prev_end is not None and movement_path:
+            # Insert fast travel between non-contiguous paths
+            commands.append({
+                'mode': 'travel',
+                'vertices': [prev_end, movement_path[0]],
+            })
+
+        if movement_path:
+            commands.append({'mode': 'print', 'vertices': movement_path})
+            prev_end = movement_path[-1]
+
         display_paths.append(display_path)
         movement_vertices.extend(movement_path)
 
         # Mark segment boundary at the end of each path
         segment_boundaries.append(len(movement_vertices) - 1)
-    
+
     return {
         'display': {
             'paths': display_paths,
@@ -224,6 +237,7 @@ def generate_recipe_from_dxf(file_path, resolution=1.0, use_interpolation=True,
         'movement': {
             'vertices': movement_vertices,
             'segments': segment_boundaries,
+            'commands': commands,
             'type': '3D'
         },
         'metadata': {

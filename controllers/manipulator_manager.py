@@ -402,6 +402,63 @@ class ManipulatorManager(QObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def execute_recipe(
+        self,
+        commands: List[dict],
+        print_speed: float,
+        travel_speed: float,
+    ) -> None:
+        """Execute a list of commands with different speeds for print and travel."""
+
+        def worker():
+            try:
+                if not commands:
+                    return
+                self._pause_event.set()
+                try:
+                    current = (
+                        self.controllers['x'].read_position(),
+                        self.controllers['y'].read_position(),
+                        self.controllers['z'].read_position(),
+                    )
+                except Exception:
+                    current = (0.0, 0.0, 0.0)
+
+                self._log_event(
+                    "PATH",
+                    "pattern_start",
+                    f"start={current}",
+                    "",
+                )
+
+                total = sum(max(len(cmd.get('vertices', [])) - 1, 0) for cmd in commands)
+                progress_idx = 0
+
+                for cmd in commands:
+                    mode = cmd.get('mode', 'print')
+                    verts = cmd.get('vertices', [])
+                    speed = print_speed if mode == 'print' else travel_speed
+                    for target in verts[1:]:
+                        self._pause_event.wait()
+                        if not self._move_axes(current, target, speed):
+                            return
+                        current = target
+                        progress_idx += 1
+                        pct = progress_idx / total if total else 1.0
+                        self.pattern_progress.emit(progress_idx - 1, pct, 0.0)
+
+                self._log_event(
+                    "PATH",
+                    "pattern_completed",
+                    f"end={current}",
+                    "",
+                )
+                self.pattern_completed.emit()
+            except Exception as exc:  # pragma: no cover - hardware dependent
+                self.error_occurred.emit("PATH", str(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     # ------------------------------------------------------------------
     # Background monitoring
     # ------------------------------------------------------------------
