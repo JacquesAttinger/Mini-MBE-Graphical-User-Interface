@@ -467,15 +467,11 @@ class MainWindow(QMainWindow):
         # Determine Z height; recipes currently keep a constant Z
         z_val = raw_vertices[0][2] if raw_vertices and len(raw_vertices[0]) > 2 else 0.0
 
-        # Clean path for display/preflight (2D) and build 3D path for motion
-        # Do not force-append the starting vertex; if the DXF already contains
-        # a closing vertex we strip it so the manipulator doesn't attempt an
-        # automatic return move that can trigger position errors.
+        # Clean path for display/preflight (2D) and build 3D path for motion.
+        # Close the path so the repeated start/end vertex is preserved.
         self._vertices_xy = self._sanitize_vertices(
-            raw_vertices, eps=1e-6, close_path=False
+            raw_vertices, eps=1e-6, close_path=True
         )
-        if self._vertices_xy and _almost_equal(self._vertices_xy[0], self._vertices_xy[-1]):
-            self._vertices_xy = self._vertices_xy[:-1]
         self._vertices = [(x, y, z_val) for x, y in self._vertices_xy]
         self._segments = geometry['movement'].get('segments', [])
         if self._segments:
