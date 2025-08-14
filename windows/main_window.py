@@ -191,6 +191,9 @@ class MainWindow(QMainWindow):
         self._vertices = []      # list[(x_mm, y_mm, z_mm)] used for execution
         self._vertices_xy = []   # list[(x_mm, y_mm)] for plotting and preflight
         self._current_dxf_file = None
+        self._commands = []
+        self.print_speed = 0.1
+        self.travel_speed = 0.5
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -254,6 +257,43 @@ class MainWindow(QMainWindow):
             if d > max_jump_mm:
                 issues.append((i-1, i, d))
         return issues
+
+    def _prompt_speed_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Set Speeds")
+        layout = QVBoxLayout(dlg)
+
+        ps_label = QLabel("Print speed (mm/s)")
+        ps_spin = QDoubleSpinBox()
+        ps_spin.setDecimals(4)
+        ps_spin.setRange(0.0001, 2.0)
+        ps_spin.setValue(self.print_speed)
+
+        ts_label = QLabel("Travel speed (mm/s)")
+        ts_spin = QDoubleSpinBox()
+        ts_spin.setDecimals(4)
+        ts_spin.setRange(0.0001, 2.0)
+        ts_spin.setValue(self.travel_speed)
+
+        layout.addWidget(ps_label)
+        layout.addWidget(ps_spin)
+        layout.addWidget(ts_label)
+        layout.addWidget(ts_spin)
+
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("Cancel")
+        btn_row.addStretch(1)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
+
+        if dlg.exec() == QDialog.Accepted:
+            self.print_speed = ps_spin.value()
+            self.travel_speed = ts_spin.value()
 
     def _ensure_connected(self):
         """Make sure all axes have an active Modbus client before starting."""
@@ -328,14 +368,6 @@ class MainWindow(QMainWindow):
         self.nozzle_input.setRange(1.0, 1000.0)
         self.nozzle_input.setValue(12.0)
         right_layout.addWidget(self.nozzle_input)
-
-        self.speed_input = QDoubleSpinBox()
-        self.speed_input.setPrefix("Speed ")
-        self.speed_input.setSuffix(" mm/s")
-        self.speed_input.setDecimals(4)
-        self.speed_input.setRange(0.0001, 2.0)
-        self.speed_input.setValue(0.1)
-        right_layout.addWidget(self.speed_input)
 
         self.start_pattern_btn = QPushButton("Start Pattern")
         self.start_pattern_btn.setEnabled(False)
@@ -461,6 +493,7 @@ class MainWindow(QMainWindow):
     def _handle_dxf_loaded(self, filename, geometry):
         self.position_canvas.update_dxf(geometry, scale_factor=1.0)
         self._current_dxf_file = os.path.basename(filename)
+        self._commands = geometry['movement'].get('commands', [])
 
         raw_vertices = geometry['movement']['vertices'] or []
         # Determine Z height; recipes currently keep a constant Z
@@ -499,9 +532,11 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self._prompt_speed_dialog()
+
         checker = CoordinateCheckerDialog(
             self._vertices_xy,
-            speed=self.speed_input.value(),
+            speed=self.print_speed,
             jump_warn_mm=0.5,
             parent=self,
         )
@@ -540,8 +575,6 @@ class MainWindow(QMainWindow):
         self.pause_pattern_btn.setEnabled(False)
         self.pause_pattern_btn.setText("Pause Pattern")
 
-        speed = self.speed_input.value()
-
         if hasattr(self.manager, "reset_path_state"):
             self.manager.reset_path_state()
 
@@ -577,8 +610,9 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.pause_pattern_btn.setEnabled(True)
                 try:
-                    path = self._vertices[1:]
-                    self.manager.execute_path(path, speed)
+                    self.manager.execute_recipe(
+                        self._commands, self.print_speed, self.travel_speed
+                    )
                 except Exception as exc:
                     self.start_pattern_btn.setEnabled(True)
                     self.pause_pattern_btn.setEnabled(False)
@@ -591,7 +625,7 @@ class MainWindow(QMainWindow):
                     self.modbus_panel.stop_log()
 
         self.manager.point_reached.connect(_after_start)
-        self.manager.move_to_point(first, speed)
+        self.manager.move_to_point(first, self.travel_speed)
 
     def _toggle_pause_pattern(self):
         if self.pause_pattern_btn.text().startswith("Pause"):

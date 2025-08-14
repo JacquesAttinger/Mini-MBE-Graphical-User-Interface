@@ -124,39 +124,63 @@ class EnhancedPositionCanvas(FigureCanvas):
                 collection.remove()
             self._dxf_lines = []
             
-            # Extract display paths
-            if isinstance(geometry, dict):
-                if 'display' in geometry:
-                    display_data = geometry['display']['paths']
-                elif 'vertices' in geometry:  # Backward compatibility
-                    display_data = [[(v[0], v[1])] for v in geometry['vertices']]
-                else:
-                    raise ValueError("Invalid DXF data format")
-            elif isinstance(geometry, list):
-                display_data = geometry
+            # If movement commands exist, color-code print vs travel
+            if (
+                isinstance(geometry, dict)
+                and 'movement' in geometry
+                and geometry['movement'].get('commands')
+            ):
+                for cmd in geometry['movement']['commands']:
+                    verts = [(v[0], v[1]) for v in cmd.get('vertices', [])]
+                    if len(verts) < 2:
+                        continue
+                    segments = [[verts[i], verts[i + 1]] for i in range(len(verts) - 1)]
+                    color = 'blue' if cmd.get('mode') == 'print' else 'gray'
+                    lc = LineCollection(
+                        segments,
+                        colors=color,
+                        linewidths=0.5,
+                        alpha=0.7,
+                        zorder=5,
+                        capstyle='round',
+                        antialiased=True,
+                    )
+                    self.ax.add_collection(lc)
+                    self._dxf_lines.append(lc)
             else:
-                raise ValueError("Unsupported geometry type")
-            
-            # Create LineCollection for each original path
-            for path in display_data:
-                if len(path) < 2:
-                    continue
-                    
-                segments = []
-                for i in range(len(path)-1):
-                    segments.append([path[i], path[i+1]])
-                
-                lc = LineCollection(
-                    segments,
-                    colors='blue',
-                    linewidths=0.5,  # Thinner lines for small features
-                    alpha=0.7,
-                    zorder=5,
-                    capstyle='round',  # Anti-aliasing for small lines
-                    antialiased=True
-                )
-                self.ax.add_collection(lc)
-                self._dxf_lines.append(lc)
+                # Extract display paths
+                if isinstance(geometry, dict):
+                    if 'display' in geometry:
+                        display_data = geometry['display']['paths']
+                    elif 'vertices' in geometry:  # Backward compatibility
+                        display_data = [[(v[0], v[1])] for v in geometry['vertices']]
+                    else:
+                        raise ValueError("Invalid DXF data format")
+                elif isinstance(geometry, list):
+                    display_data = geometry
+                else:
+                    raise ValueError("Unsupported geometry type")
+
+                # Create LineCollection for each original path
+                for path in display_data:
+                    if len(path) < 2:
+                        continue
+
+                    segments = []
+                    for i in range(len(path)-1):
+                        segments.append([path[i], path[i+1]])
+
+                    lc = LineCollection(
+                        segments,
+                        colors='blue',
+                        linewidths=0.5,  # Thinner lines for small features
+                        alpha=0.7,
+                        zorder=5,
+                        capstyle='round',  # Anti-aliasing for small lines
+                        antialiased=True
+                    )
+                    self.ax.add_collection(lc)
+                    self._dxf_lines.append(lc)
             
             self.update_plot()
             
