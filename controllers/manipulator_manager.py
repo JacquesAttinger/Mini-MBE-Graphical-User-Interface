@@ -22,7 +22,7 @@ AXIS_SLAVE_MAP = {"x": 1, "y": 2, "z": 3}
 # Minimum positional delta that will trigger an actual move command.  Values
 # smaller than this are treated as already "in position" to avoid waiting on
 # axes that have no movement.
-EPSILON = 1e-4
+EPSILON = 4e-4
 
 
 class ManipulatorManager(QObject):

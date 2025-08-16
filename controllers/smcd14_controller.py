@@ -31,7 +31,7 @@ BACKLASH_ADDR        = 72
 # ----------------------------------------------------------------------
 # Motion constraints
 # ----------------------------------------------------------------------
-EPSILON = 1e-4  # Positional tolerance in millimeters
+EPSILON = 4e-4  # Positional tolerance in millimeters
 RUNNING_BIT_TIMEOUT = 2.0  # seconds to wait for running bit to assert
 
 # ----------------------------------------------------------------------
