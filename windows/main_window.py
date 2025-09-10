@@ -25,6 +25,7 @@ from widgets.axis_control import AxisControlWidget
 from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
 from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
+from widgets.temperature_pressure_tab import TemperaturePressureTab
 from widgets.modbus_panel import ModbusPanel
 
 from math import hypot
@@ -394,6 +395,9 @@ class MainWindow(QMainWindow):
         # ------------------------------------------------------------------
         self.camera_tab = CameraTab()
         tabs.addTab(self.camera_tab, "Camera")
+
+        self.tp_tab = TemperaturePressureTab()
+        tabs.addTab(self.tp_tab, "Temp/Pressure")
 
         self.setWindowTitle("MBE Manipulator Control")
         self.resize(1200, 800)
