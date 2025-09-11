@@ -134,9 +134,14 @@ class TemperaturePressureTab(QWidget):
         self._pressure_line.set_data(x_pressure, y_pressure)
         self._pressure_ax.relim()
         self._pressure_ax.autoscale_view()
-
         self._canvas.draw_idle()
 
+    def _update_plots(self) -> None:
+        """Refresh both plots. Used by the periodic timer."""
+        self._update_temperature_plot()
+        self._update_pressure_plot()
+
+    # ------------------------------------------------------------------
     def _update_plots(self) -> None:
         """Refresh both plots. Used by the periodic timer."""
         self._update_temperature_plot()
