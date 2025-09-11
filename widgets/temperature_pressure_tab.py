@@ -62,7 +62,7 @@ class TemperaturePressureTab(QWidget):
 
         # Automated email sending for interlock system
         self._alert_threshold = 5.0                  # mTorr (adjust)
-        self._email_cooldown_secs = 60               # one email per minute max
+        self._email_cooldown_secs = 5             # one email per minute max
         self._email_next_allowed = 0.0               # monotonic timestamp
         self._email_inflight = False                 # prevent overlap
         self._alert_sender = "jacques.attinger@gmail.com"
@@ -269,7 +269,7 @@ class TemperaturePressureTab(QWidget):
         self._email_inflight = True
         self._email_next_allowed = now + self._email_cooldown_secs
 
-        subject = "Low Pressure Alert"
+        subject = "Mini-MBE: Low Pressure Alert"
         body = (
             f"Low pressure detected:\n"
             f"  Pressure: {pressure_value:.3e}\n"
