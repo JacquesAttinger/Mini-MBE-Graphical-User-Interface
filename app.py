@@ -9,6 +9,11 @@ from controllers.manipulator_manager import ManipulatorManager
 from services.dxf_service import DxfService
 from windows.main_window import MainWindow
 
+sys.path.append('/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services')
+print(sys.path)
+
+
+
 
 def main():
     logging.basicConfig(level=logging.INFO)

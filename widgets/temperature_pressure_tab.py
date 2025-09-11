@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import deque
+import sys
+sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services")
 import time
 from pathlib import Path
 from typing import Deque, Optional
@@ -21,6 +23,8 @@ from matplotlib.figure import Figure
 
 from services.data_logger import DataLogger
 from services.sensor_readers import PressureReader, TemperatureReader
+
+
 
 
 class TemperaturePressureTab(QWidget):
@@ -59,8 +63,10 @@ class TemperaturePressureTab(QWidget):
         # connect reader signals if provided
         if self._temperature_reader:
             self._temperature_reader.reading.connect(self._handle_temperature)
+            print('connected to temperature handler')
         if self._pressure_reader:
             self._pressure_reader.reading.connect(self._handle_pressure)
+            print('connected to pressure handler')
 
         self._setup_ui()
 
@@ -113,6 +119,8 @@ class TemperaturePressureTab(QWidget):
         self._last_pressure = pressure
         self._temp_data.append(temperature)
         self._pressure_data.append(pressure)
+        print(temperature)
+        print(pressure)
         self.temp_label.setText(f"Temp: {temperature:.2f}")
         self.pressure_label.setText(f"Pressure: {pressure:.2f}")
         if self._logging:
@@ -153,15 +161,21 @@ class TemperaturePressureTab(QWidget):
         # start logger
         try:
             self._logger.start(path)
+            print('started loggin')
             self._logging = True
         except Exception:
             self._logging = False
 
         # start readers
+        print(self._pressure_reader)
         if self._pressure_reader:
+            print('attempting to start pressure reader')
             self._pressure_reader.start()
+            print('started pressure reader')
         if self._temperature_reader:
+            print('attempting to start temp reader')
             self._temperature_reader.start()
+            print('started temp reader')
 
         self._timer.start()
         self.start_requested.emit()
@@ -183,18 +197,22 @@ class TemperaturePressureTab(QWidget):
     def _handle_temperature(self, value: float) -> None:
         """Handle a new temperature reading."""
         self._last_temp = value
+        self.add_reading(self._last_temp, self._last_pressure)
         self._temp_data.append(value)
         self.temp_label.setText(f"Temp: {value:.2f}")
         if self._logging:
             self._logger.append(time.time(), self._last_pressure, self._last_temp)
+            print('appended temp data')
         self._update_plots()
 
     # ------------------------------------------------------------------
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
         self._last_pressure = value
+        self.add_reading(self._last_temp, self._last_pressure)
         self._pressure_data.append(value)
         self.pressure_label.setText(f"Pressure: {value:.2f}")
         if self._logging:
             self._logger.append(time.time(), self._last_pressure, self._last_temp)
+            print('appended pressure data')
         self._update_plots()
