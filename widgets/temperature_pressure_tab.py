@@ -113,16 +113,17 @@ class TemperaturePressureTab(QWidget):
         values.addWidget(self.pressure_label)
         layout.addLayout(values)
 
-        # Matplotlib plots
+        # Matplotlib plot with twin y-axes
         self._fig = Figure(figsize=(5, 4))
         self._canvas = FigureCanvas(self._fig)
-        self._temp_ax = self._fig.add_subplot(211)
-        self._pressure_ax = self._fig.add_subplot(212)
-        self._fig.tight_layout(pad=3.0) 
-        self._temp_ax.set_title("Temperature")
-        self._pressure_ax.set_title("Pressure")
-        (self._temp_line,) = self._temp_ax.plot([], [], "-o")
-        (self._pressure_line,) = self._pressure_ax.plot([], [], "-o")
+        self._temp_ax = self._fig.add_subplot(111)
+        self._pressure_ax = self._temp_ax.twinx()
+        self._fig.tight_layout(pad=3.0)
+        self._temp_ax.set_title("Temperature and Pressure")
+        self._temp_ax.set_ylabel("Temperature")
+        self._pressure_ax.set_ylabel("Pressure")
+        (self._temp_line,) = self._temp_ax.plot([], [], "-o", color="tab:red")
+        (self._pressure_line,) = self._pressure_ax.plot([], [], "-o", color="tab:blue")
         layout.addWidget(self._canvas)
 
         # Connect buttons to handlers
@@ -152,12 +153,6 @@ class TemperaturePressureTab(QWidget):
         self._pressure_ax.autoscale_view()
         self._canvas.draw_idle()
 
-    def _update_plots(self) -> None:
-        """Refresh both plots. Used by the periodic timer."""
-        self._update_temperature_plot()
-        self._update_pressure_plot()
-
-    # ------------------------------------------------------------------
     def _update_plots(self) -> None:
         """Refresh both plots. Used by the periodic timer."""
         self._update_temperature_plot()
