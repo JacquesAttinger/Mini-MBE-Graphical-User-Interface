@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+import serial
 from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
@@ -13,16 +14,15 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover - handled at runtime
     Serial = None  # type: ignore
 
-try:  # pragma: no cover - optional dependency
-    from pfieffer_vacuum_protocol import PfiefferVacuumProtocol  # type: ignore
-except Exception:  # pragma: no cover - handled at runtime
-    try:  # pragma: no cover - alternative import name
-        from PfiefferVacuumProtocol import PfiefferVacuumProtocol  # type: ignore
-    except Exception:  # pragma: no cover - handled at runtime
-        PfiefferVacuumProtocol = None  # type: ignore
+try:
+    import PfiefferVacuumProtocol as pvp
+    print('successfully imported Pfeiffer Vacuum Protocol')
+except Exception:
+    print('Was not able to import Pfeiffer Vacuum Protocol')
 
 try:  # pragma: no cover - optional dependency
     from pymodbus.client import ModbusTcpClient  # type: ignore
+    print('imported ModbusTCPClient')
 except Exception:  # pragma: no cover - handled at runtime
     ModbusTcpClient = None  # type: ignore
 
@@ -36,8 +36,11 @@ class PressureReader(QObject):
         super().__init__()
         self._port = port
         self._baudrate = baudrate
+        self._address = 122
         self._thread: Optional[threading.Thread] = None
+        self._timeout = 1
         self._running = False
+        self._ser = serial.Serial(self._port, baudrate=self._baudrate, timeout=self._timeout)
 
     # ------------------------------------------------------------------
     def start(self) -> None:
@@ -58,15 +61,15 @@ class PressureReader(QObject):
 
     # ------------------------------------------------------------------
     def _run(self) -> None:  # pragma: no cover - hardware interaction
-        if Serial is None or PfiefferVacuumProtocol is None:
+        if Serial is None or pvp is None:
             return
-        proto = PfiefferVacuumProtocol()
         while self._running:
             try:
                 with Serial(self._port, self._baudrate, timeout=1) as ser:
                     while self._running:
                         try:
-                            value = proto.read_pressure(ser)
+                            print('Tried reading pressure')
+                            value = pvp.read_pressure(self._ser, self._address)
                             self.reading.emit(float(value))
                             time.sleep(1)
                         except Exception:
@@ -81,9 +84,9 @@ class TemperatureReader(QObject):
 
     reading = Signal(float)
 
-    def __init__(self, host: str, port: int = 502, unit: int = 1, address: int = 0) -> None:
+    def __init__(self, host: str, port: int = 502, unit: int = 1, address: int = 1) -> None:
         super().__init__()
-        self._host = host
+        self._host = "192.168.111.222" # Eurotherm IP address
         self._port = port
         self._unit = unit
         self._address = address
@@ -109,16 +112,17 @@ class TemperatureReader(QObject):
 
     # ------------------------------------------------------------------
     def _run(self) -> None:  # pragma: no cover - hardware interaction
+        print('is it running')
         if ModbusTcpClient is None:
             return
         while self._running:
-            client = ModbusTcpClient(self._host, port=self._port)
+            client = ModbusTcpClient(self._host, timeout = 1)
             try:
                 if not client.connect():
                     raise ConnectionError("Failed to connect")
                 while self._running:
                     try:
-                        resp = client.read_input_registers(self._address, count=1, unit=self._unit)
+                        resp = client.read_input_registers(self._address, count=1)
                         if resp and not getattr(resp, "isError", lambda: False)():
                             self.reading.emit(float(resp.registers[0]))
                         else:
