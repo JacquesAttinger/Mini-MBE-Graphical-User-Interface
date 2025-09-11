@@ -13,3 +13,6 @@ Thumbs.db
 # Virtual environments
 .venv/
 venv/
+
+# Data logs
+logs/

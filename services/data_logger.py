@@ -21,7 +21,7 @@ class DataLogger:
         if self._fh is not None:
             raise RuntimeError("Logger already started")
 
-        file_path = Path(path)
+        file_path = '/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs'
         if not file_path.is_absolute():
             file_path = self.base_dir / file_path
         file_path.parent.mkdir(parents=True, exist_ok=True)

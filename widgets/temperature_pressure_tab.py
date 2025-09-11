@@ -117,6 +117,8 @@ class TemperaturePressureTab(QWidget):
         """Append a new temperature/pressure pair and update displays."""
         self._last_temp = temperature
         self._last_pressure = pressure
+        print(f'Last pressure was {self._last_pressure}')
+        print(f'Last temp was {self._last_temp}')
         self._temp_data.append(temperature)
         self._pressure_data.append(pressure)
         print(temperature)
@@ -211,7 +213,7 @@ class TemperaturePressureTab(QWidget):
         self._last_pressure = value
         self.add_reading(self._last_temp, self._last_pressure)
         self._pressure_data.append(value)
-        self.pressure_label.setText(f"Pressure: {value:.2f}")
+        self.pressure_label.setText(f"Pressure: {value:.2e}")
         if self._logging:
             self._logger.append(time.time(), self._last_pressure, self._last_temp)
             print('appended pressure data')
