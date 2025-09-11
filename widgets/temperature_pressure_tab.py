@@ -113,36 +113,30 @@ class TemperaturePressureTab(QWidget):
         self.stop_btn.clicked.connect(self._on_stop)
 
     # ------------------------------------------------------------------
-    def add_reading(self, temperature: float, pressure: float) -> None:
-        """Append a new temperature/pressure pair and update displays."""
-        self._last_temp = temperature
-        self._last_pressure = pressure
-        self._temp_data.append(temperature)
-        self._pressure_data.append(pressure)
-        print(temperature)
-        print(pressure)
-        self.temp_label.setText(f"Temp: {temperature:.2f}")
-        self.pressure_label.setText(f"Pressure: {pressure:.2f}")
-        if self._logging:
-            self._logger.append(time.time(), self._last_pressure, self._last_temp)
-        self._update_plots()
-
-    # ------------------------------------------------------------------
-    def _update_plots(self) -> None:
-        """Refresh line plots with current data."""
+    def _update_temperature_plot(self) -> None:
+        """Refresh the temperature line plot with current data."""
         x_temp = list(range(len(self._temp_data)))
         y_temp = list(self._temp_data)
         self._temp_line.set_data(x_temp, y_temp)
         self._temp_ax.relim()
         self._temp_ax.autoscale_view()
+        self._canvas.draw_idle()
 
+    # ------------------------------------------------------------------
+    def _update_pressure_plot(self) -> None:
+        """Refresh the pressure line plot with current data."""
         x_pressure = list(range(len(self._pressure_data)))
         y_pressure = list(self._pressure_data)
         self._pressure_line.set_data(x_pressure, y_pressure)
         self._pressure_ax.relim()
         self._pressure_ax.autoscale_view()
-
         self._canvas.draw_idle()
+
+    # ------------------------------------------------------------------
+    def _update_plots(self) -> None:
+        """Refresh both plots. Used by the periodic timer."""
+        self._update_temperature_plot()
+        self._update_pressure_plot()
 
     # ------------------------------------------------------------------
     def _on_start(self) -> None:
@@ -197,22 +191,20 @@ class TemperaturePressureTab(QWidget):
     def _handle_temperature(self, value: float) -> None:
         """Handle a new temperature reading."""
         self._last_temp = value
-        self.add_reading(self._last_temp, self._last_pressure)
         self._temp_data.append(value)
         self.temp_label.setText(f"Temp: {value:.2f}")
         if self._logging:
             self._logger.append(time.time(), self._last_pressure, self._last_temp)
             print('appended temp data')
-        self._update_plots()
+        self._update_temperature_plot()
 
     # ------------------------------------------------------------------
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
         self._last_pressure = value
-        self.add_reading(self._last_temp, self._last_pressure)
         self._pressure_data.append(value)
         self.pressure_label.setText(f"Pressure: {value:.2f}")
         if self._logging:
             self._logger.append(time.time(), self._last_pressure, self._last_temp)
             print('appended pressure data')
-        self._update_plots()
+        self._update_pressure_plot()
