@@ -6,9 +6,12 @@ from collections import deque
 import sys
 sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services")
 import time
+import smtplib
 from pathlib import Path
 from typing import Deque, Optional
 from datetime import datetime
+import os, smtplib, threading, time
+from email.mime.text import MIMEText
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
@@ -55,6 +58,15 @@ class TemperaturePressureTab(QWidget):
         self._logging = False
         self._last_temp = 0.0
         self._last_pressure = 0.0
+
+        # Automated email sending for interlock system
+        self._alert_threshold = 5.0                  # mTorr (adjust)
+        self._email_cooldown_secs = 60               # one email per minute max
+        self._email_next_allowed = 0.0               # monotonic timestamp
+        self._email_inflight = False                 # prevent overlap
+        self._alert_sender = "jacques.attinger@gmail.com"
+        self._alert_receiver = "jacques.attinger@gmail.com"
+        self._gmail_app_password = "leximtegokofxrxa" 
 
         # timer for plot updates
         self._timer = QTimer(self)
@@ -218,6 +230,51 @@ class TemperaturePressureTab(QWidget):
         # self._update_plots()
         self._update_temperature_plot()
 
+    # if self._last_pressure < 5:
+    #     sender = 'jacques.attinger@gmail.com'
+    #     receiver = 'jacques.attinger@gmail.com'
+
+    #     subject = 'Low Pressure Alert'
+    #     message = f'The pressure in the chamber is quite low. It has a value of {self._last_pressure}'
+
+    #     text = f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{message}"
+
+    #     server = smtplib.SMTP("smtp.gmail.com", 587)
+    #     server.starttls()
+
+    #     server.login(sender, 'leximtegokofxrxa')
+
+    #     server.sendmail(sender, receiver, text)
+
+    #     print(f'email has been sent to {receiver}')
+
+    def _maybe_alert_low_pressure(self, pressure_value: float) -> None:
+        """If pressure is below threshold, queue an email (cooldown + nonblocking)."""
+        if pressure_value >= self._alert_threshold:
+            return
+
+        now = time.monotonic()
+        if now < self._email_next_allowed:
+            return  # still in cooldown window
+        if self._email_inflight:
+            return  # an email is already being sent
+
+        # Guard future sends immediately to avoid races
+        self._email_inflight = True
+        self._email_next_allowed = now + self._email_cooldown_secs
+
+        subject = "Low Pressure Alert"
+        body = (
+            f"Low pressure detected:\n"
+            f"  Pressure: {pressure_value:.3e}\n"
+            f"  Temperature (last): {self._last_temp:.2f}\n"
+            f"  Time: {datetime.now().isoformat(timespec='seconds')}\n"
+        )
+        threading.Thread(
+            target=self._send_email_async,
+            args=(subject, body),
+            daemon=True
+        ).start()
     # ------------------------------------------------------------------
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
@@ -239,4 +296,25 @@ class TemperaturePressureTab(QWidget):
             self._logger.append(timestamp, self._last_pressure, self._last_temp)
             print('appended pressure data')
         # self._update_plots()
+        self._maybe_alert_low_pressure(value)
         self._update_pressure_plot()
+
+    def _send_email_async(self, subject: str, body: str) -> None:
+        """Runs in a background thread; never touch Qt widgets here."""
+        try:
+            msg = MIMEText(body, "plain", "utf-8")
+            msg["Subject"] = subject
+            msg["From"] = self._alert_sender
+            msg["To"] = self._alert_receiver
+
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+                server.starttls()
+                server.login(self._alert_sender, self._gmail_app_password)
+                server.sendmail(self._alert_sender, [self._alert_receiver], msg.as_string())
+            print(f"[ALERT] Email sent to {self._alert_receiver}")
+        except Exception as e:
+            # Optional: back off sooner if send failed
+            print(f"[ALERT] Email send failed: {e!r}")
+        finally:
+            # Release the inflight flag (safe enough for a boolean)
+            self._email_inflight = False
