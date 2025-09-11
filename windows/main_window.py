@@ -27,6 +27,7 @@ from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
 from widgets.temperature_pressure_tab import TemperaturePressureTab
 from widgets.modbus_panel import ModbusPanel
+from services.sensor_readers import PressureReader, TemperatureReader
 
 from math import hypot
 
@@ -396,7 +397,20 @@ class MainWindow(QMainWindow):
         self.camera_tab = CameraTab()
         tabs.addTab(self.camera_tab, "Camera")
 
-        self.tp_tab = TemperaturePressureTab()
+        # temperature/pressure monitoring
+        pressure_reader = None
+        temperature_reader = None
+        try:
+            pressure_reader = PressureReader("/dev/tty.usbserial-BG000M9B", 9600)
+        except Exception:
+            pass
+        try:
+            temperature_reader = TemperatureReader("192.168.111.222")
+        except Exception:
+            pass
+        self.tp_tab = TemperaturePressureTab(
+            pressure_reader=pressure_reader, temperature_reader=temperature_reader
+        )
         tabs.addTab(self.tp_tab, "Temp/Pressure")
 
         self.setWindowTitle("MBE Manipulator Control")
