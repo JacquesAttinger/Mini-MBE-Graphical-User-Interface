@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QLineEdit,
+    QCheckBox,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -113,6 +114,17 @@ class TemperaturePressureTab(QWidget):
         values.addWidget(self.pressure_label)
         layout.addLayout(values)
 
+        # Parameter toggle checkboxes
+        toggles = QHBoxLayout()
+        self.temp_box = QCheckBox("Temperature")
+        self.temp_box.setChecked(True)
+        self.pressure_box = QCheckBox("Pressure")
+        self.pressure_box.setChecked(True)
+        toggles.addWidget(self.temp_box)
+        toggles.addWidget(self.pressure_box)
+        toggles.addStretch(1)
+        layout.addLayout(toggles)
+
         # Matplotlib plot with twin y-axes
         self._fig = Figure(figsize=(5, 4))
         self._canvas = FigureCanvas(self._fig)
@@ -131,26 +143,42 @@ class TemperaturePressureTab(QWidget):
         self.stop_btn.clicked.connect(self._on_stop)
         self.service_btn.clicked.connect(self._toggle_service_mode)
 
+        # Connect checkboxes to plot updates
+        self.temp_box.toggled.connect(self._update_plots)
+        self.pressure_box.toggled.connect(self._update_plots)
+
     
 
     
     
     def _update_temperature_plot(self) -> None:
         """Refresh the temperature line plot with current data."""
-        x_temp = list(range(len(self._temp_data)))
-        y_temp = list(self._temp_data)
-        self._temp_line.set_data(x_temp, y_temp)
-        self._temp_ax.relim()
-        self._temp_ax.autoscale_view()
+        if not self.temp_box.isChecked():
+            self._temp_line.set_visible(False)
+            self._temp_ax.get_yaxis().set_visible(False)
+        else:
+            x_temp = list(range(len(self._temp_data)))
+            y_temp = list(self._temp_data)
+            self._temp_line.set_data(x_temp, y_temp)
+            self._temp_line.set_visible(True)
+            self._temp_ax.get_yaxis().set_visible(True)
+            self._temp_ax.relim()
+            self._temp_ax.autoscale_view()
         self._canvas.draw_idle()
 
     def _update_pressure_plot(self) -> None:
         """Refresh the pressure line plot with current data."""
-        x_pressure = list(range(len(self._pressure_data)))
-        y_pressure = list(self._pressure_data)
-        self._pressure_line.set_data(x_pressure, y_pressure)
-        self._pressure_ax.relim()
-        self._pressure_ax.autoscale_view()
+        if not self.pressure_box.isChecked():
+            self._pressure_line.set_visible(False)
+            self._pressure_ax.get_yaxis().set_visible(False)
+        else:
+            x_pressure = list(range(len(self._pressure_data)))
+            y_pressure = list(self._pressure_data)
+            self._pressure_line.set_data(x_pressure, y_pressure)
+            self._pressure_line.set_visible(True)
+            self._pressure_ax.get_yaxis().set_visible(True)
+            self._pressure_ax.relim()
+            self._pressure_ax.autoscale_view()
         self._canvas.draw_idle()
 
     def _update_plots(self) -> None:
