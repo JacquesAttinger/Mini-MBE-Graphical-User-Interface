@@ -8,6 +8,7 @@ sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Resear
 import time
 from pathlib import Path
 from typing import Deque, Optional
+from datetime import datetime
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
@@ -50,7 +51,7 @@ class TemperaturePressureTab(QWidget):
         # hardware interfaces / logger
         self._pressure_reader = pressure_reader
         self._temperature_reader = temperature_reader
-        self._logger = logger or DataLogger()
+        self._logger = logger or DataLogger("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs")
         self._logging = False
         self._last_temp = 0.0
         self._last_pressure = 0.0
@@ -102,6 +103,7 @@ class TemperaturePressureTab(QWidget):
         self._canvas = FigureCanvas(self._fig)
         self._temp_ax = self._fig.add_subplot(211)
         self._pressure_ax = self._fig.add_subplot(212)
+        self._fig.tight_layout(pad=3.0) 
         self._temp_ax.set_title("Temperature")
         self._pressure_ax.set_title("Pressure")
         (self._temp_line,) = self._temp_ax.plot([], [], "-o")
@@ -112,32 +114,21 @@ class TemperaturePressureTab(QWidget):
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
 
-    # ------------------------------------------------------------------
-    def add_reading(self, temperature: float, pressure: float) -> None:
-        """Append a new temperature/pressure pair and update displays."""
-        self._last_temp = temperature
-        self._last_pressure = pressure
-        print(f'Last pressure was {self._last_pressure}')
-        print(f'Last temp was {self._last_temp}')
-        self._temp_data.append(temperature)
-        self._pressure_data.append(pressure)
-        print(temperature)
-        print(pressure)
-        self.temp_label.setText(f"Temp: {temperature:.2f}")
-        self.pressure_label.setText(f"Pressure: {pressure:.2f}")
-        if self._logging:
-            self._logger.append(time.time(), self._last_pressure, self._last_temp)
-        self._update_plots()
+    
 
-    # ------------------------------------------------------------------
-    def _update_plots(self) -> None:
-        """Refresh line plots with current data."""
+    
+    
+    def _update_temperature_plot(self) -> None:
+        """Refresh the temperature line plot with current data."""
         x_temp = list(range(len(self._temp_data)))
         y_temp = list(self._temp_data)
         self._temp_line.set_data(x_temp, y_temp)
         self._temp_ax.relim()
         self._temp_ax.autoscale_view()
+        self._canvas.draw_idle()
 
+    def _update_pressure_plot(self) -> None:
+        """Refresh the pressure line plot with current data."""
         x_pressure = list(range(len(self._pressure_data)))
         y_pressure = list(self._pressure_data)
         self._pressure_line.set_data(x_pressure, y_pressure)
@@ -145,6 +136,11 @@ class TemperaturePressureTab(QWidget):
         self._pressure_ax.autoscale_view()
 
         self._canvas.draw_idle()
+
+    def _update_plots(self) -> None:
+        """Refresh both plots. Used by the periodic timer."""
+        self._update_temperature_plot()
+        self._update_pressure_plot()
 
     # ------------------------------------------------------------------
     def _on_start(self) -> None:
@@ -199,22 +195,43 @@ class TemperaturePressureTab(QWidget):
     def _handle_temperature(self, value: float) -> None:
         """Handle a new temperature reading."""
         self._last_temp = value
-        self.add_reading(self._last_temp, self._last_pressure)
+        # self.add_reading(self._last_temp, self._last_pressure)
         self._temp_data.append(value)
         self.temp_label.setText(f"Temp: {value:.2f}")
+        style = """
+    font-size: 20pt;
+    padding: 8px;
+    border: 2px solid #333;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+"""
+        self.temp_label.setStyleSheet(style)
         if self._logging:
-            self._logger.append(time.time(), self._last_pressure, self._last_temp)
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
+            self._logger.append(timestamp, self._last_pressure, self._last_temp)
             print('appended temp data')
-        self._update_plots()
+        # self._update_plots()
+        self._update_temperature_plot()
 
     # ------------------------------------------------------------------
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
         self._last_pressure = value
-        self.add_reading(self._last_temp, self._last_pressure)
+        # self.add_reading(self._last_temp, self._last_pressure)
         self._pressure_data.append(value)
         self.pressure_label.setText(f"Pressure: {value:.2e}")
+        style = """
+    font-size: 20pt;
+    padding: 8px;
+    border: 2px solid #333;
+    border-radius: 6px;
+    background-color: #f9f9f9;
+"""
+        self.pressure_label.setStyleSheet(style)
         if self._logging:
-            self._logger.append(time.time(), self._last_pressure, self._last_temp)
+
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
+            self._logger.append(timestamp, self._last_pressure, self._last_temp)
             print('appended pressure data')
-        self._update_plots()
+        # self._update_plots()
+        self._update_pressure_plot()

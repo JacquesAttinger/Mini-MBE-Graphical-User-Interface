@@ -1,0 +1,19 @@
+# Import smtplib for the actual sending function
+import smtplib
+
+sender = 'jacques.attinger@gmail.com'
+receiver = 'jacques.attinger@gmail.com'
+
+subject = 'Automated email test'
+message = 'This is a test.'
+
+text = f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{message}"
+
+server = smtplib.SMTP("smtp.gmail.com", 587)
+server.starttls()
+
+server.login(sender, 'leximtegokofxrxa')
+
+server.sendmail(sender, receiver, text)
+
+print(f'email has been sent to {receiver}')

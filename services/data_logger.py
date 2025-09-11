@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Optional, TextIO
+from datetime import datetime
 
 
 class DataLogger:
@@ -21,7 +22,8 @@ class DataLogger:
         if self._fh is not None:
             raise RuntimeError("Logger already started")
 
-        file_path = '/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs'
+        file_path = Path(path)
+        print(Path(path))
         if not file_path.is_absolute():
             file_path = self.base_dir / file_path
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,3 +53,4 @@ class DataLogger:
     def set_base_dir(self, base_dir: str | Path) -> None:
         """Update the base directory for relative file paths."""
         self.base_dir = Path(base_dir)
+
