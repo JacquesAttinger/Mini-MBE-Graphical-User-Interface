@@ -58,6 +58,7 @@ class TemperaturePressureTab(QWidget):
         self._logging = False
         self._last_temp = 0.0
         self._last_pressure = 0.0
+        self._service_mode = False
 
         # Automated email sending for interlock system
         self._alert_threshold = 5.0                  # mTorr (adjust)
@@ -98,6 +99,8 @@ class TemperaturePressureTab(QWidget):
         control.addWidget(self.path_edit)
         control.addWidget(self.start_btn)
         control.addWidget(self.stop_btn)
+        self.service_btn = QPushButton("Service mode: off")
+        control.addWidget(self.service_btn)
         control.addStretch(1)
         layout.addLayout(control)
 
@@ -125,6 +128,7 @@ class TemperaturePressureTab(QWidget):
         # Connect buttons to handlers
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
+        self.service_btn.clicked.connect(self._toggle_service_mode)
 
     
 
@@ -250,6 +254,8 @@ class TemperaturePressureTab(QWidget):
 
     def _maybe_alert_low_pressure(self, pressure_value: float) -> None:
         """If pressure is below threshold, queue an email (cooldown + nonblocking)."""
+        if self._service_mode:
+            return
         if pressure_value >= self._alert_threshold:
             return
 
@@ -275,6 +281,11 @@ class TemperaturePressureTab(QWidget):
             args=(subject, body),
             daemon=True
         ).start()
+
+    def _toggle_service_mode(self) -> None:
+        self._service_mode = not self._service_mode
+        state = "on" if self._service_mode else "off"
+        self.service_btn.setText(f"Service mode: {state}")
     # ------------------------------------------------------------------
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
