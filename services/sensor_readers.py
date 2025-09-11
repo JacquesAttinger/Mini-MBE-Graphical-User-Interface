@@ -68,7 +68,7 @@ class PressureReader(QObject):
                 with Serial(self._port, self._baudrate, timeout=1) as ser:
                     while self._running:
                         try:
-                            print('Tried reading pressure')
+                            # print('Tried reading pressure')
                             value = pvp.read_pressure(self._ser, self._address)
                             self.reading.emit(float(value))
                             time.sleep(1)

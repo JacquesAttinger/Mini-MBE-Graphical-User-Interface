@@ -230,7 +230,7 @@ class TemperaturePressureTab(QWidget):
         if self._logging:
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
             self._logger.append(timestamp, self._last_pressure, self._last_temp)
-            print('appended temp data')
+            # print('appended temp data')
         # self._update_plots()
         self._update_temperature_plot()
 
@@ -305,7 +305,7 @@ class TemperaturePressureTab(QWidget):
 
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
             self._logger.append(timestamp, self._last_pressure, self._last_temp)
-            print('appended pressure data')
+            # print('appended pressure data')
         # self._update_plots()
         self._maybe_alert_low_pressure(value)
         self._update_pressure_plot()
