@@ -143,14 +143,14 @@ class TemperaturePressureTab(QWidget):
         self.setpoint_edit.setPlaceholderText("Setpoint")
         self.setpoint_btn = QPushButton("Set T Setpoint")
         self.setpoint_btn.clicked.connect(self._on_set_setpoint)
-        self.ramp_rate_edit = QLineEdit()
-        self.ramp_rate_edit.setPlaceholderText("Ramp rate")
-        self.ramp_rate_btn = QPushButton("Set Ramp Rate")
-        self.ramp_rate_btn.clicked.connect(self._on_set_ramp_rate)
+        # self.ramp_rate_edit = QLineEdit()
+        # self.ramp_rate_edit.setPlaceholderText("Ramp rate")
+        # self.ramp_rate_btn = QPushButton("Set Ramp Rate")
+        # self.ramp_rate_btn.clicked.connect(self._on_set_ramp_rate)
         temp_ctrl.addWidget(self.setpoint_edit)
         temp_ctrl.addWidget(self.setpoint_btn)
-        temp_ctrl.addWidget(self.ramp_rate_edit)
-        temp_ctrl.addWidget(self.ramp_rate_btn)
+        # temp_ctrl.addWidget(self.ramp_rate_edit)
+        # temp_ctrl.addWidget(self.ramp_rate_btn)
         temp_ctrl.addStretch(1)
         layout.addLayout(temp_ctrl)
 
@@ -290,24 +290,25 @@ class TemperaturePressureTab(QWidget):
         if not self._temperature_controller:
             return
         try:
-            value = float(self.setpoint_edit.text())
+            value = self.setpoint_edit.text()
+            print(value)
         except ValueError:
             self.setpoint_edit.setStyleSheet("background-color: pink;")
             return
         self.setpoint_edit.setStyleSheet("")
         self._temperature_controller.set_setpoint(value)
 
-    def _on_set_ramp_rate(self) -> None:
-        """Handle ramp rate button click."""
-        if not self._temperature_controller:
-            return
-        try:
-            value = float(self.ramp_rate_edit.text())
-        except ValueError:
-            self.ramp_rate_edit.setStyleSheet("background-color: pink;")
-            return
-        self.ramp_rate_edit.setStyleSheet("")
-        self._temperature_controller.set_ramp_rate(value)
+    # def _on_set_ramp_rate(self) -> None:
+    #     """Handle ramp rate button click."""
+    #     if not self._temperature_controller:
+    #         return
+    #     try:
+    #         value = float(self.ramp_rate_edit.text())
+    #     except ValueError:
+    #         self.ramp_rate_edit.setStyleSheet("background-color: pink;")
+    #         return
+    #     self.ramp_rate_edit.setStyleSheet("")
+    #     self._temperature_controller.set_ramp_rate(value)
 
     # ------------------------------------------------------------------
     def _handle_temperature(self, value: float) -> None:

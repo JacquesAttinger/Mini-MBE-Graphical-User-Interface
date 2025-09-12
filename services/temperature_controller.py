@@ -21,10 +21,10 @@ class TemperatureController:
         setpoint_address: int = 0,
         ramp_rate_address: int = 0,
     ) -> None:
-        self._host = host
+        self._host = "192.168.111.222"
         self._port = port
         self._unit = unit
-        self._setpoint_address = setpoint_address
+        self._setpoint_address = 2
         self._ramp_rate_address = ramp_rate_address
 
     def _connect(self) -> Optional[ModbusTcpClient]:
@@ -36,13 +36,18 @@ class TemperatureController:
             return None
         return client
 
-    def set_setpoint(self, value: float) -> None:
+    def set_setpoint(self, value: int) -> None:
         """Set the desired temperature setpoint."""
         client = self._connect()
         if client is None:
             return
         try:
-            # Insert line for writing temperature here
+            print(value)
+            print(type(value))
+            value = int(value)
+            client.write_register(2, value)
+            print(f'Changed temperature setpoint to {value}')
+            # print(client.read_holding_registers(2, device_id=1))
             pass
         finally:
             try:
