@@ -8,7 +8,7 @@ sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Resear
 import time
 import smtplib
 from pathlib import Path
-from typing import Deque, Optional, Tuple
+from typing import Deque, Optional, Tuple, List
 from datetime import datetime
 import os, smtplib, threading, time
 from email.mime.text import MIMEText
@@ -35,6 +35,11 @@ from services.temperature_controller import TemperatureController
 
 class TemperaturePressureTab(QWidget):
     """Tab displaying temperature/pressure values and recent history plots."""
+
+    #: Maximum history (seconds) retained in memory regardless of the
+    #: currently displayed window. This allows the view window to expand
+    #: immediately without waiting for new data to accumulate.
+    _MAX_HISTORY_SECONDS = 60.0
 
     # Signals to control acquisition
     start_requested = Signal()
@@ -186,22 +191,30 @@ class TemperaturePressureTab(QWidget):
             return 10.0
 
     def _trim_deque(self, data: Deque[Tuple[float, float]], window: float) -> None:
-        """Remove entries older than the time window."""
+        """Remove entries older than the given window from *data*."""
         cutoff = time.time() - window
         while data and data[0][0] < cutoff:
             data.popleft()
 
+    def _recent_data(
+        self, data: Deque[Tuple[float, float]], window: float
+    ) -> List[Tuple[float, float]]:
+        """Return a list of data points within ``window`` seconds."""
+        cutoff = time.time() - window
+        return [(t, v) for t, v in data if t >= cutoff]
+
     def _update_temperature_plot(self) -> None:
         """Refresh the temperature line plot with current data."""
         window = self._get_window_seconds()
-        self._trim_deque(self._temp_data, window)
+        points = self._recent_data(self._temp_data, window)
         if not self.temp_box.isChecked():
             self._temp_line.set_visible(False)
             self._temp_ax.get_yaxis().set_visible(False)
         else:
-            if self._temp_data:
-                x_temp = [t - self._temp_data[0][0] for t, _ in self._temp_data]
-                y_temp = [v for _, v in self._temp_data]
+            if points:
+                base = points[0][0]
+                x_temp = [t - base for t, _ in points]
+                y_temp = [v for _, v in points]
             else:
                 x_temp, y_temp = [], []
             self._temp_line.set_data(x_temp, y_temp)
@@ -214,14 +227,15 @@ class TemperaturePressureTab(QWidget):
     def _update_pressure_plot(self) -> None:
         """Refresh the pressure line plot with current data."""
         window = self._get_window_seconds()
-        self._trim_deque(self._pressure_data, window)
+        points = self._recent_data(self._pressure_data, window)
         if not self.pressure_box.isChecked():
             self._pressure_line.set_visible(False)
             self._pressure_ax.get_yaxis().set_visible(False)
         else:
-            if self._pressure_data:
-                x_pressure = [t - self._pressure_data[0][0] for t, _ in self._pressure_data]
-                y_pressure = [v for _, v in self._pressure_data]
+            if points:
+                base = points[0][0]
+                x_pressure = [t - base for t, _ in points]
+                y_pressure = [v for _, v in points]
             else:
                 x_pressure, y_pressure = [], []
             self._pressure_line.set_data(x_pressure, y_pressure)
@@ -316,7 +330,7 @@ class TemperaturePressureTab(QWidget):
         self._last_temp = value
         now = time.time()
         self._temp_data.append((now, value))
-        self._trim_deque(self._temp_data, self._get_window_seconds())
+        self._trim_deque(self._temp_data, self._MAX_HISTORY_SECONDS)
         self.temp_label.setText(f"Temp: {value:.2f}")
         style = """
     font-size: 20pt;
@@ -391,7 +405,7 @@ class TemperaturePressureTab(QWidget):
         self._last_pressure = value
         now = time.time()
         self._pressure_data.append((now, value))
-        self._trim_deque(self._pressure_data, self._get_window_seconds())
+        self._trim_deque(self._pressure_data, self._MAX_HISTORY_SECONDS)
         self.pressure_label.setText(f"Pressure: {value:.2e}")
         style = """
     font-size: 20pt;
