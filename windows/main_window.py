@@ -28,6 +28,7 @@ from widgets.camera_tab import CameraTab
 from widgets.temperature_pressure_tab import TemperaturePressureTab
 from widgets.modbus_panel import ModbusPanel
 from services.sensor_readers import PressureReader, TemperatureReader
+from services.temperature_controller import TemperatureController
 
 from math import hypot
 
@@ -408,8 +409,15 @@ class MainWindow(QMainWindow):
             temperature_reader = TemperatureReader("192.168.111.222")
         except Exception:
             pass
+        temperature_controller = None
+        try:
+            temperature_controller = TemperatureController("192.168.111.222")
+        except Exception:
+            pass
         self.tp_tab = TemperaturePressureTab(
-            pressure_reader=pressure_reader, temperature_reader=temperature_reader
+            pressure_reader=pressure_reader,
+            temperature_reader=temperature_reader,
+            temperature_controller=temperature_controller,
         )
         tabs.addTab(self.tp_tab, "Temp/Pressure")
 

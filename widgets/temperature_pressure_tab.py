@@ -28,6 +28,7 @@ from matplotlib.figure import Figure
 
 from services.data_logger import DataLogger
 from services.sensor_readers import PressureReader, TemperatureReader
+from services.temperature_controller import TemperatureController
 
 
 
@@ -45,6 +46,7 @@ class TemperaturePressureTab(QWidget):
         *,
         pressure_reader: Optional[PressureReader] = None,
         temperature_reader: Optional[TemperatureReader] = None,
+        temperature_controller: Optional[TemperatureController] = None,
         logger: Optional[DataLogger] = None,
     ) -> None:
         super().__init__(parent)
@@ -55,6 +57,7 @@ class TemperaturePressureTab(QWidget):
         # hardware interfaces / logger
         self._pressure_reader = pressure_reader
         self._temperature_reader = temperature_reader
+        self._temperature_controller = temperature_controller
         self._logger = logger or DataLogger("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs")
         self._logging = False
         self._last_temp = 0.0
@@ -133,6 +136,23 @@ class TemperaturePressureTab(QWidget):
         window_row.addWidget(self.window_edit)
         window_row.addStretch(1)
         layout.addLayout(window_row)
+
+        # Temperature control inputs
+        temp_ctrl = QHBoxLayout()
+        self.setpoint_edit = QLineEdit()
+        self.setpoint_edit.setPlaceholderText("Setpoint")
+        self.setpoint_btn = QPushButton("Set T Setpoint")
+        self.setpoint_btn.clicked.connect(self._on_set_setpoint)
+        self.ramp_rate_edit = QLineEdit()
+        self.ramp_rate_edit.setPlaceholderText("Ramp rate")
+        self.ramp_rate_btn = QPushButton("Set Ramp Rate")
+        self.ramp_rate_btn.clicked.connect(self._on_set_ramp_rate)
+        temp_ctrl.addWidget(self.setpoint_edit)
+        temp_ctrl.addWidget(self.setpoint_btn)
+        temp_ctrl.addWidget(self.ramp_rate_edit)
+        temp_ctrl.addWidget(self.ramp_rate_btn)
+        temp_ctrl.addStretch(1)
+        layout.addLayout(temp_ctrl)
 
         # Matplotlib plot with twin y-axes
         self._fig = Figure(figsize=(5, 4))
@@ -264,6 +284,30 @@ class TemperaturePressureTab(QWidget):
             self._logging = False
         self._timer.stop()
         self.stop_requested.emit()
+
+    def _on_set_setpoint(self) -> None:
+        """Handle setpoint button click."""
+        if not self._temperature_controller:
+            return
+        try:
+            value = float(self.setpoint_edit.text())
+        except ValueError:
+            self.setpoint_edit.setStyleSheet("background-color: pink;")
+            return
+        self.setpoint_edit.setStyleSheet("")
+        self._temperature_controller.set_setpoint(value)
+
+    def _on_set_ramp_rate(self) -> None:
+        """Handle ramp rate button click."""
+        if not self._temperature_controller:
+            return
+        try:
+            value = float(self.ramp_rate_edit.text())
+        except ValueError:
+            self.ramp_rate_edit.setStyleSheet("background-color: pink;")
+            return
+        self.ramp_rate_edit.setStyleSheet("")
+        self._temperature_controller.set_ramp_rate(value)
 
     # ------------------------------------------------------------------
     def _handle_temperature(self, value: float) -> None:
