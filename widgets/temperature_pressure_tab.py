@@ -8,7 +8,7 @@ sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Resear
 import time
 import smtplib
 from pathlib import Path
-from typing import Deque, Optional
+from typing import Deque, Optional, Tuple
 from datetime import datetime
 import os, smtplib, threading, time
 from email.mime.text import MIMEText
@@ -48,9 +48,9 @@ class TemperaturePressureTab(QWidget):
         logger: Optional[DataLogger] = None,
     ) -> None:
         super().__init__(parent)
-        # deques store last 10 readings
-        self._temp_data: Deque[float] = deque(maxlen=10)
-        self._pressure_data: Deque[float] = deque(maxlen=10)
+        # deques store (timestamp, value) pairs for recent readings
+        self._temp_data: Deque[Tuple[float, float]] = deque()
+        self._pressure_data: Deque[Tuple[float, float]] = deque()
 
         # hardware interfaces / logger
         self._pressure_reader = pressure_reader
@@ -125,6 +125,15 @@ class TemperaturePressureTab(QWidget):
         toggles.addStretch(1)
         layout.addLayout(toggles)
 
+        # Time window selector
+        window_row = QHBoxLayout()
+        window_row.addWidget(QLabel("Last seconds:"))
+        self.window_edit = QLineEdit("10")
+        self.window_edit.setFixedWidth(60)
+        window_row.addWidget(self.window_edit)
+        window_row.addStretch(1)
+        layout.addLayout(window_row)
+
         # Matplotlib plot with twin y-axes
         self._fig = Figure(figsize=(5, 4))
         self._canvas = FigureCanvas(self._fig)
@@ -146,19 +155,35 @@ class TemperaturePressureTab(QWidget):
         # Connect checkboxes to plot updates
         self.temp_box.toggled.connect(self._update_plots)
         self.pressure_box.toggled.connect(self._update_plots)
+        
+        
 
-    
+    def _get_window_seconds(self) -> float:
+        """Return the user-specified history window in seconds."""
+        try:
+            return float(self.window_edit.text())
+        except (AttributeError, ValueError):
+            return 10.0
 
-    
-    
+    def _trim_deque(self, data: Deque[Tuple[float, float]], window: float) -> None:
+        """Remove entries older than the time window."""
+        cutoff = time.time() - window
+        while data and data[0][0] < cutoff:
+            data.popleft()
+
     def _update_temperature_plot(self) -> None:
         """Refresh the temperature line plot with current data."""
+        window = self._get_window_seconds()
+        self._trim_deque(self._temp_data, window)
         if not self.temp_box.isChecked():
             self._temp_line.set_visible(False)
             self._temp_ax.get_yaxis().set_visible(False)
         else:
-            x_temp = list(range(len(self._temp_data)))
-            y_temp = list(self._temp_data)
+            if self._temp_data:
+                x_temp = [t - self._temp_data[0][0] for t, _ in self._temp_data]
+                y_temp = [v for _, v in self._temp_data]
+            else:
+                x_temp, y_temp = [], []
             self._temp_line.set_data(x_temp, y_temp)
             self._temp_line.set_visible(True)
             self._temp_ax.get_yaxis().set_visible(True)
@@ -168,12 +193,17 @@ class TemperaturePressureTab(QWidget):
 
     def _update_pressure_plot(self) -> None:
         """Refresh the pressure line plot with current data."""
+        window = self._get_window_seconds()
+        self._trim_deque(self._pressure_data, window)
         if not self.pressure_box.isChecked():
             self._pressure_line.set_visible(False)
             self._pressure_ax.get_yaxis().set_visible(False)
         else:
-            x_pressure = list(range(len(self._pressure_data)))
-            y_pressure = list(self._pressure_data)
+            if self._pressure_data:
+                x_pressure = [t - self._pressure_data[0][0] for t, _ in self._pressure_data]
+                y_pressure = [v for _, v in self._pressure_data]
+            else:
+                x_pressure, y_pressure = [], []
             self._pressure_line.set_data(x_pressure, y_pressure)
             self._pressure_line.set_visible(True)
             self._pressure_ax.get_yaxis().set_visible(True)
@@ -239,8 +269,9 @@ class TemperaturePressureTab(QWidget):
     def _handle_temperature(self, value: float) -> None:
         """Handle a new temperature reading."""
         self._last_temp = value
-        # self.add_reading(self._last_temp, self._last_pressure)
-        self._temp_data.append(value)
+        now = time.time()
+        self._temp_data.append((now, value))
+        self._trim_deque(self._temp_data, self._get_window_seconds())
         self.temp_label.setText(f"Temp: {value:.2f}")
         style = """
     font-size: 20pt;
@@ -313,8 +344,9 @@ class TemperaturePressureTab(QWidget):
     def _handle_pressure(self, value: float) -> None:
         """Handle a new pressure reading."""
         self._last_pressure = value
-        # self.add_reading(self._last_temp, self._last_pressure)
-        self._pressure_data.append(value)
+        now = time.time()
+        self._pressure_data.append((now, value))
+        self._trim_deque(self._pressure_data, self._get_window_seconds())
         self.pressure_label.setText(f"Pressure: {value:.2e}")
         style = """
     font-size: 20pt;
