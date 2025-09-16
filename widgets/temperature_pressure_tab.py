@@ -39,7 +39,7 @@ class TemperaturePressureTab(QWidget):
     #: Maximum history (seconds) retained in memory regardless of the
     #: currently displayed window. This allows the view window to expand
     #: immediately without waiting for new data to accumulate.
-    _MAX_HISTORY_SECONDS = 60.0
+    _MAX_HISTORY_SECONDS = 360.0
 
     # Signals to control acquisition
     start_requested = Signal()
@@ -71,7 +71,7 @@ class TemperaturePressureTab(QWidget):
 
         # Automated email sending for interlock system
         self._alert_threshold = 5.0                  # mTorr (adjust)
-        self._email_cooldown_secs = 5             # one email per minute max
+        self._email_cooldown_secs = 60            # number of seconds between emails get sent
         self._email_next_allowed = 0.0               # monotonic timestamp
         self._email_inflight = False                 # prevent overlap
         self._alert_sender = "jacques.attinger@gmail.com"
@@ -166,10 +166,10 @@ class TemperaturePressureTab(QWidget):
         self._pressure_ax = self._temp_ax.twinx()
         self._fig.tight_layout(pad=3.0)
         self._temp_ax.set_title("Temperature and Pressure")
-        self._temp_ax.set_ylabel("Temperature")
+        self._temp_ax.set_ylabel("Temperature (C)")
         self._pressure_ax.set_ylabel("Pressure")
-        (self._temp_line,) = self._temp_ax.plot([], [], "-o", color="tab:red")
-        (self._pressure_line,) = self._pressure_ax.plot([], [], "-o", color="tab:blue")
+        (self._temp_line,) = self._temp_ax.plot([], [], color="tab:red")
+        (self._pressure_line,) = self._pressure_ax.plot([], [], color="tab:blue")
         layout.addWidget(self._canvas)
 
         # Connect buttons to handlers

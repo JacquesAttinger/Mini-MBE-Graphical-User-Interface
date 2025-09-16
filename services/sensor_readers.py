@@ -123,8 +123,13 @@ class TemperatureReader(QObject):
                 while self._running:
                     try:
                         resp = client.read_input_registers(self._address, count=1)
+                        # print(resp)
                         if resp and not getattr(resp, "isError", lambda: False)():
-                            self.reading.emit(float(resp.registers[0]))
+                            print(type(resp.registers[0]))
+                            print(resp.registers[0])
+                            converted_temperature = resp.registers[0] / 10.0
+                            self.reading.emit(converted_temperature)
+                            
                         else:
                             raise ConnectionError("Invalid response")
                         time.sleep(1)
