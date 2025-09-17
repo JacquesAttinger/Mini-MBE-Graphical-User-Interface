@@ -44,8 +44,9 @@ class TemperatureController:
         try:
             print(value)
             print(type(value))
-            value = int(value)
-            client.write_register(2, value)
+            value = float(value)
+            value_as_int =  int(value * 10)
+            client.write_register(2, value_as_int)
             print(f'Changed temperature setpoint to {value}')
             # print(client.read_holding_registers(2, device_id=1))
             pass
