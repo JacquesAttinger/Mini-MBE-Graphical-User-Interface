@@ -67,6 +67,8 @@ class TemperaturePressureTab(QWidget):
         self._logging = False
         self._last_temp = 0.0
         self._last_pressure = 0.0
+        self._temp_pending = False
+        self._pressure_pending = False
         self._service_mode = False
 
         # Automated email sending for interlock system
@@ -269,6 +271,8 @@ class TemperaturePressureTab(QWidget):
             self._logger.start(path)
             print('started loggin')
             self._logging = True
+            self._temp_pending = False
+            self._pressure_pending = False
         except Exception:
             self._logging = False
 
@@ -296,6 +300,8 @@ class TemperaturePressureTab(QWidget):
         if self._logging:
             self._logger.stop()
             self._logging = False
+        self._temp_pending = False
+        self._pressure_pending = False
         self._timer.stop()
         self.stop_requested.emit()
 
@@ -341,9 +347,8 @@ class TemperaturePressureTab(QWidget):
 """
         self.temp_label.setStyleSheet(style)
         if self._logging:
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
-            self._logger.append(timestamp, self._last_pressure, self._last_temp)
-            # print('appended temp data')
+            self._temp_pending = True
+            self._log_latest_readings()
         # self._update_plots()
         self._update_temperature_plot()
 
@@ -416,13 +421,21 @@ class TemperaturePressureTab(QWidget):
 """
         self.pressure_label.setStyleSheet(style)
         if self._logging:
-
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") #generates the current time
-            self._logger.append(timestamp, self._last_pressure, self._last_temp)
-            # print('appended pressure data')
+            self._pressure_pending = True
+            self._log_latest_readings()
         # self._update_plots()
         self._maybe_alert_low_pressure(value)
         self._update_pressure_plot()
+
+    def _log_latest_readings(self) -> None:
+        """Write a single combined log row when both readings are updated."""
+        if not (self._temp_pending and self._pressure_pending):
+            return
+
+        timestamp = datetime.now().isoformat(timespec="milliseconds")
+        self._logger.append(timestamp, self._last_pressure, self._last_temp)
+        self._temp_pending = False
+        self._pressure_pending = False
 
     def _send_email_async(self, subject: str, body: str) -> None:
         """Runs in a background thread; never touch Qt widgets here."""
