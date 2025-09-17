@@ -2,7 +2,7 @@
 from PySide6.QtCore import QCoreApplication
 from sensor_readers import PressureReader, TemperatureReader
 import signal
-import PfiefferVacuumProtocol as pvp
+from . import PfiefferVacuumProtocol as pvp
 
 app = QCoreApplication([])
 
