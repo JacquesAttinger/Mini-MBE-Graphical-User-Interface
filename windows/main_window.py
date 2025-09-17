@@ -27,6 +27,7 @@ from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
 from widgets.temperature_pressure_tab import TemperaturePressureTab
 from widgets.modbus_panel import ModbusPanel
+from services.alert_config import load_alert_config
 from services.sensor_readers import PressureReader, TemperatureReader
 from services.temperature_controller import TemperatureController
 
@@ -414,10 +415,12 @@ class MainWindow(QMainWindow):
             temperature_controller = TemperatureController("192.168.111.222")
         except Exception:
             pass
+        alert_config = load_alert_config()
         self.tp_tab = TemperaturePressureTab(
             pressure_reader=pressure_reader,
             temperature_reader=temperature_reader,
             temperature_controller=temperature_controller,
+            alert_config=alert_config,
         )
         tabs.addTab(self.tp_tab, "Temp/Pressure")
 
