@@ -22,6 +22,11 @@ from PySide6.QtWidgets import (
     QWidget,
     QLineEdit,
     QCheckBox,
+    QDialog,
+    QFormLayout,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QMessageBox,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -39,7 +44,7 @@ class TemperaturePressureTab(QWidget):
     #: Maximum history (seconds) retained in memory regardless of the
     #: currently displayed window. This allows the view window to expand
     #: immediately without waiting for new data to accumulate.
-    _MAX_HISTORY_SECONDS = 360.0
+    DEFAULT_MAX_HISTORY_SECONDS = 360.0
 
     # Signals to control acquisition
     start_requested = Signal()
@@ -65,11 +70,13 @@ class TemperaturePressureTab(QWidget):
         self._temperature_controller = temperature_controller
         self._logger = logger or DataLogger("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs")
         self._logging = False
+        self._acquisition_running = False
         self._last_temp = 0.0
         self._last_pressure = 0.0
         self._temp_pending = False
         self._pressure_pending = False
         self._service_mode = False
+        self._max_history_seconds = self.DEFAULT_MAX_HISTORY_SECONDS
 
         # Automated email sending for interlock system
         self._alert_threshold = 5.0                  # mTorr (adjust)
@@ -112,6 +119,8 @@ class TemperaturePressureTab(QWidget):
         control.addWidget(self.stop_btn)
         self.service_btn = QPushButton("Service mode: off")
         control.addWidget(self.service_btn)
+        self.settings_btn = QPushButton("Settings…")
+        control.addWidget(self.settings_btn)
         control.addStretch(1)
         layout.addLayout(control)
 
@@ -178,6 +187,7 @@ class TemperaturePressureTab(QWidget):
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
         self.service_btn.clicked.connect(self._toggle_service_mode)
+        self.settings_btn.clicked.connect(self._on_settings_clicked)
 
         # Connect checkboxes to plot updates
         self.temp_box.toggled.connect(self._update_plots)
@@ -255,6 +265,8 @@ class TemperaturePressureTab(QWidget):
     # ------------------------------------------------------------------
     def _on_start(self) -> None:
         """Validate path, start readers/logger and timer."""
+        if self._acquisition_running:
+            return
         path = self.path_edit.text().strip()
         try:
             if not path:
@@ -288,6 +300,8 @@ class TemperaturePressureTab(QWidget):
             print('started temp reader')
 
         self._timer.start()
+        self._acquisition_running = True
+        self.settings_btn.setEnabled(False)
         self.start_requested.emit()
 
     # ------------------------------------------------------------------
@@ -303,6 +317,8 @@ class TemperaturePressureTab(QWidget):
         self._temp_pending = False
         self._pressure_pending = False
         self._timer.stop()
+        self._acquisition_running = False
+        self.settings_btn.setEnabled(True)
         self.stop_requested.emit()
 
     def _on_set_setpoint(self) -> None:
@@ -336,7 +352,7 @@ class TemperaturePressureTab(QWidget):
         self._last_temp = value
         now = time.time()
         self._temp_data.append((now, value))
-        self._trim_deque(self._temp_data, self._MAX_HISTORY_SECONDS)
+        self._trim_deque(self._temp_data, self._max_history_seconds)
         self.temp_label.setText(f"Temp: {value:.2f}")
         style = """
     font-size: 20pt;
@@ -410,7 +426,7 @@ class TemperaturePressureTab(QWidget):
         self._last_pressure = value
         now = time.time()
         self._pressure_data.append((now, value))
-        self._trim_deque(self._pressure_data, self._MAX_HISTORY_SECONDS)
+        self._trim_deque(self._pressure_data, self._max_history_seconds)
         self.pressure_label.setText(f"Pressure: {value:.2e}")
         style = """
     font-size: 20pt;
@@ -456,3 +472,62 @@ class TemperaturePressureTab(QWidget):
         finally:
             # Release the inflight flag (safe enough for a boolean)
             self._email_inflight = False
+
+    # ------------------------------------------------------------------
+    def _on_settings_clicked(self) -> None:
+        """Open the settings dialog when acquisition is idle."""
+        if self._acquisition_running:
+            QMessageBox.information(
+                self,
+                "Acquisition running",
+                "Stop the acquisition before changing settings.",
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Temperature/Pressure Settings")
+        form = QFormLayout(dialog)
+
+        max_history_input = QDoubleSpinBox(dialog)
+        max_history_input.setDecimals(1)
+        max_history_input.setRange(1.0, 3600.0)
+        max_history_input.setValue(self._max_history_seconds)
+        max_history_input.setSuffix(" s")
+
+        cooldown_input = QDoubleSpinBox(dialog)
+        cooldown_input.setDecimals(1)
+        cooldown_input.setRange(0.0, 3600.0)
+        cooldown_input.setValue(self._email_cooldown_secs)
+        cooldown_input.setSuffix(" s")
+
+        pressure_input = QDoubleSpinBox(dialog)
+        pressure_input.setDecimals(3)
+        pressure_input.setRange(0.0, 1_000_000.0)
+        pressure_input.setValue(self._alert_threshold)
+        pressure_input.setSuffix(" mTorr")
+
+        form.addRow("Max history", max_history_input)
+        form.addRow("Alert cooldown", cooldown_input)
+        form.addRow("Minimum pressure", pressure_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        self._max_history_seconds = max_history_input.value()
+        self._email_cooldown_secs = cooldown_input.value()
+        self._alert_threshold = pressure_input.value()
+
+        # Trim existing data to the new history length and refresh the plots
+        self._trim_deque(self._temp_data, self._max_history_seconds)
+        self._trim_deque(self._pressure_data, self._max_history_seconds)
+
+        window_seconds = self._get_window_seconds()
+        if window_seconds > self._max_history_seconds:
+            self.window_edit.setText(f"{self._max_history_seconds:g}")
+
+        self._update_plots()
