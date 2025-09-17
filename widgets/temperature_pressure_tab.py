@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import smtplib
-import threading
-import time
 from collections import deque
-from datetime import datetime
-from email.mime.text import MIMEText
+import sys
+sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services")
+import time
+import smtplib
 from pathlib import Path
-from typing import Deque, List, Optional, Tuple
+from typing import Deque, Optional, Tuple, List
+from datetime import datetime
+import os, smtplib, threading, time
+from email.mime.text import MIMEText
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
@@ -29,7 +31,7 @@ from PySide6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from services.alert_config import AlertConfig
+from email_credentials import ALERT_RECEIVER, GMAIL_APP_PASSWORD
 from services.data_logger import DataLogger
 from services.sensor_readers import PressureReader, TemperatureReader
 from services.temperature_controller import TemperatureController
@@ -57,7 +59,6 @@ class TemperaturePressureTab(QWidget):
         temperature_reader: Optional[TemperatureReader] = None,
         temperature_controller: Optional[TemperatureController] = None,
         logger: Optional[DataLogger] = None,
-        alert_config: Optional[AlertConfig] = None,
     ) -> None:
         super().__init__(parent)
         # deques store (timestamp, value) pairs for recent readings
@@ -68,10 +69,7 @@ class TemperaturePressureTab(QWidget):
         self._pressure_reader = pressure_reader
         self._temperature_reader = temperature_reader
         self._temperature_controller = temperature_controller
-        self._logger = logger or DataLogger(
-            "/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs"
-        )
-        self._alert_config: Optional[AlertConfig] = alert_config
+        self._logger = logger or DataLogger("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs")
         self._logging = False
         self._acquisition_running = False
         self._last_temp = 0.0
@@ -87,6 +85,10 @@ class TemperaturePressureTab(QWidget):
         self._email_cooldown_secs = 60            # number of seconds between emails get sent
         self._email_next_allowed = 0.0               # monotonic timestamp
         self._email_inflight = False                 # prevent overlap
+        self._alert_sender = "jacques.attinger@gmail.com"
+        self._alert_receiver = ALERT_RECEIVER
+        self._gmail_app_password = GMAIL_APP_PASSWORD
+
         # timer for plot updates
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
@@ -101,20 +103,10 @@ class TemperaturePressureTab(QWidget):
             print('connected to pressure handler')
 
         self._setup_ui()
-        self._update_alert_warning_visibility()
 
     # ------------------------------------------------------------------
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-
-        self._alert_warning_label = QLabel(
-            "Alert emails are unavailable. Configure the sender/recipient in Settings and provide the SMTP password via environment or config file."
-        )
-        self._alert_warning_label.setWordWrap(True)
-        self._alert_warning_label.setStyleSheet(
-            "color: #842029; background-color: #f8d7da; border: 1px solid #f5c2c7; border-radius: 4px; padding: 6px;"
-        )
-        layout.addWidget(self._alert_warning_label)
 
         # Control row
         control = QHBoxLayout()
@@ -202,8 +194,8 @@ class TemperaturePressureTab(QWidget):
         # Connect checkboxes to plot updates
         self.temp_box.toggled.connect(self._update_plots)
         self.pressure_box.toggled.connect(self._update_plots)
-
-
+        
+        
 
     def _get_window_seconds(self) -> float:
         """Return the user-specified history window in seconds."""
@@ -403,11 +395,6 @@ class TemperaturePressureTab(QWidget):
         if pressure_value >= self._alert_threshold:
             return
 
-        config = self._alert_config
-        if config is None or not config.is_complete():
-            self._update_alert_warning_visibility()
-            return
-
         now = time.monotonic()
         if now < self._email_next_allowed:
             return  # still in cooldown window
@@ -427,8 +414,8 @@ class TemperaturePressureTab(QWidget):
         )
         threading.Thread(
             target=self._send_email_async,
-            args=(subject, body, config.copy()),
-            daemon=True,
+            args=(subject, body),
+            daemon=True
         ).start()
 
     def _toggle_service_mode(self) -> None:
@@ -458,13 +445,6 @@ class TemperaturePressureTab(QWidget):
         self._maybe_alert_low_pressure(value)
         self._update_pressure_plot()
 
-    def _update_alert_warning_visibility(self) -> None:
-        """Toggle the on-screen warning when alerts are unavailable."""
-
-        warning_needed = not (self._alert_config and self._alert_config.is_complete())
-        if hasattr(self, "_alert_warning_label"):
-            self._alert_warning_label.setVisible(warning_needed)
-
     def _log_latest_readings(self) -> None:
         """Write a single combined log row when both readings are updated."""
         if not (self._temp_pending and self._pressure_pending):
@@ -477,20 +457,19 @@ class TemperaturePressureTab(QWidget):
         self._temp_pending = False
         self._pressure_pending = False
 
-    def _send_email_async(self, subject: str, body: str, config: AlertConfig) -> None:
+    def _send_email_async(self, subject: str, body: str) -> None:
         """Runs in a background thread; never touch Qt widgets here."""
-
         try:
             msg = MIMEText(body, "plain", "utf-8")
             msg["Subject"] = subject
-            msg["From"] = config.sender
-            msg["To"] = config.recipient
+            msg["From"] = self._alert_sender
+            msg["To"] = self._alert_receiver
 
             with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
                 server.starttls()
-                server.login(config.sender, config.password)
-                server.sendmail(config.sender, [config.recipient], msg.as_string())
-            print(f"[ALERT] Email sent to {config.recipient}")
+                server.login(self._alert_sender, self._gmail_app_password)
+                server.sendmail(self._alert_sender, [self._alert_receiver], msg.as_string())
+            print(f"[ALERT] Email sent to {self._alert_receiver}")
         except Exception as e:
             # Optional: back off sooner if send failed
             print(f"[ALERT] Email send failed: {e!r}")
@@ -538,27 +517,10 @@ class TemperaturePressureTab(QWidget):
         pressure_input.setValue(self._alert_threshold)
         pressure_input.setSuffix(" mTorr")
 
-        sender_input = QLineEdit(dialog)
-        sender_input.setPlaceholderText("alerts@example.com")
-        recipient_input = QLineEdit(dialog)
-        recipient_input.setPlaceholderText("operator@example.com")
-        if self._alert_config:
-            sender_input.setText(self._alert_config.sender)
-            recipient_input.setText(self._alert_config.recipient)
-
         form.addRow("Max history", max_history_input)
         form.addRow("Log retention", retention_input)
         form.addRow("Alert cooldown", cooldown_input)
         form.addRow("Minimum pressure", pressure_input)
-        form.addRow("Alert sender", sender_input)
-        form.addRow("Alert recipient", recipient_input)
-
-        password_hint = QLabel(
-            "SMTP/app passwords are not stored in the UI. Set MINIMBE_ALERT_PASSWORD or provide it in the alert config file."
-        )
-        password_hint.setWordWrap(True)
-        password_hint.setStyleSheet("color: #555555;")
-        form.addRow("", password_hint)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.accepted.connect(dialog.accept)
@@ -572,12 +534,6 @@ class TemperaturePressureTab(QWidget):
         self._log_retention_secs = retention_input.value()
         self._email_cooldown_secs = cooldown_input.value()
         self._alert_threshold = pressure_input.value()
-
-        sender_text = sender_input.text().strip()
-        recipient_text = recipient_input.text().strip()
-        password = self._alert_config.password if self._alert_config else ""
-        self._alert_config = AlertConfig(sender=sender_text, recipient=recipient_text, password=password)
-        self._update_alert_warning_visibility()
 
         # Trim existing data to the new history length and refresh the plots
         self._trim_deque(self._temp_data, self._max_history_seconds)
