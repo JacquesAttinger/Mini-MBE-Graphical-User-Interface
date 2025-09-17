@@ -77,6 +77,7 @@ class TemperaturePressureTab(QWidget):
         self._pressure_pending = False
         self._service_mode = False
         self._max_history_seconds = self.DEFAULT_MAX_HISTORY_SECONDS
+        self._log_retention_secs = 0.0
 
         # Automated email sending for interlock system
         self._alert_threshold = 5.0                  # mTorr (adjust)
@@ -450,6 +451,8 @@ class TemperaturePressureTab(QWidget):
 
         timestamp = datetime.now().isoformat(timespec="milliseconds")
         self._logger.append(timestamp, self._last_pressure, self._last_temp)
+        if self._log_retention_secs > 0:
+            self._logger.trim_older_than(self._log_retention_secs)
         self._temp_pending = False
         self._pressure_pending = False
 
@@ -494,6 +497,13 @@ class TemperaturePressureTab(QWidget):
         max_history_input.setValue(self._max_history_seconds)
         max_history_input.setSuffix(" s")
 
+        retention_input = QDoubleSpinBox(dialog)
+        retention_input.setDecimals(1)
+        retention_input.setRange(0.0, 3600.0)
+        retention_input.setValue(self._log_retention_secs)
+        retention_input.setSuffix(" s")
+        retention_input.setSpecialValueText("Disabled")
+
         cooldown_input = QDoubleSpinBox(dialog)
         cooldown_input.setDecimals(1)
         cooldown_input.setRange(0.0, 3600.0)
@@ -507,6 +517,7 @@ class TemperaturePressureTab(QWidget):
         pressure_input.setSuffix(" mTorr")
 
         form.addRow("Max history", max_history_input)
+        form.addRow("Log retention", retention_input)
         form.addRow("Alert cooldown", cooldown_input)
         form.addRow("Minimum pressure", pressure_input)
 
@@ -519,6 +530,7 @@ class TemperaturePressureTab(QWidget):
             return
 
         self._max_history_seconds = max_history_input.value()
+        self._log_retention_secs = retention_input.value()
         self._email_cooldown_secs = cooldown_input.value()
         self._alert_threshold = pressure_input.value()
 
