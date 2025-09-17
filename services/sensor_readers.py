@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - handled at runtime
     Serial = None  # type: ignore
 
 try:
-    import PfiefferVacuumProtocol as pvp
+    from . import PfiefferVacuumProtocol as pvp
     print('successfully imported Pfeiffer Vacuum Protocol')
 except Exception:
     print('Was not able to import Pfeiffer Vacuum Protocol')
