@@ -402,7 +402,7 @@ class MainWindow(QMainWindow):
         pressure_reader = None
         temperature_reader = None
         try:
-            pressure_reader = PressureReader("/dev/tty.usbserial-BG000M9B", 9600)
+            pressure_reader = PressureReader("COM4", 9600)
         except Exception:
             pass
         try:

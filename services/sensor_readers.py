@@ -35,6 +35,8 @@ class PressureReader(QObject):
     def __init__(self, port: str, baudrate: int = 9600) -> None:
         super().__init__()
         self._port = port
+        print('the port is:')
+        print(self._port)
         self._baudrate = baudrate
         self._address = 122
         self._thread: Optional[threading.Thread] = None
@@ -61,20 +63,23 @@ class PressureReader(QObject):
 
     # ------------------------------------------------------------------
     def _run(self) -> None:  # pragma: no cover - hardware interaction
+        print('trying to run pressure reader')
         if Serial is None or pvp is None:
+            print('either serial or pvp is none')
             return
         while self._running:
             try:
                 with Serial(self._port, self._baudrate, timeout=1) as ser:
                     while self._running:
                         try:
-                            # print('Tried reading pressure')
+                            print('Tried reading pressure')
                             value = pvp.read_pressure(self._ser, self._address)
                             self.reading.emit(float(value))
                             time.sleep(1)
                         except Exception:
                             break
             except Exception:
+                print('wasnt able to connect to serial port')
                 time.sleep(0.5)
             time.sleep(0.5)
 
@@ -123,7 +128,7 @@ class TemperatureReader(QObject):
                 while self._running:
                     try:
                         resp = client.read_input_registers(self._address, count=1)
-                        # print(resp)
+                        print(resp)
                         if resp and not getattr(resp, "isError", lambda: False)():
                             print(type(resp.registers[0]))
                             print(resp.registers[0])
