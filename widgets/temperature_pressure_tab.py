@@ -69,7 +69,7 @@ class TemperaturePressureTab(QWidget):
         self._pressure_reader = pressure_reader
         self._temperature_reader = temperature_reader
         self._temperature_controller = temperature_controller
-        self._logger = logger or DataLogger("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/logs/Pressure and Temperature logs")
+        self._logger = logger or DataLogger(r"C:\Users\yangg\OneDrive\Documents\Python_Scripts\Jacques Python\mini_MBE_GUI_Jacques\miniMBE-GUI\Pressure and Temperature logs")
         self._logging = False
         self._acquisition_running = False
         self._last_temp = 0.0
