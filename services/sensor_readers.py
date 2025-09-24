@@ -67,9 +67,12 @@ class PressureReader(QObject):
         if Serial is None or pvp is None:
             print('either serial or pvp is none')
             return
+        print(f'self running is {self._running}')
         while self._running:
+            print('jaack')
             try:
-                with Serial(self._port, self._baudrate, timeout=1) as ser:
+                with self._ser as ser:
+                    print('attempt two of self.running is {self._running}')
                     while self._running:
                         try:
                             print('Tried reading pressure')
@@ -77,6 +80,7 @@ class PressureReader(QObject):
                             self.reading.emit(float(value))
                             time.sleep(1)
                         except Exception:
+                            print('wasnt able to read pressure')
                             break
             except Exception:
                 print('wasnt able to connect to serial port')
