@@ -180,7 +180,7 @@ class TemperaturePressureTab(QWidget):
         self._fig.tight_layout(pad=3.0)
         self._temp_ax.set_title("Temperature and Pressure")
         self._temp_ax.set_ylabel("Temperature (C)")
-        self._pressure_ax.set_ylabel("Pressure")
+        self._pressure_ax.set_ylabel("Pressure (hPa)")
         (self._temp_line,) = self._temp_ax.plot([], [], color="tab:red")
         (self._pressure_line,) = self._pressure_ax.plot([], [], color="tab:blue")
         layout.addWidget(self._canvas)

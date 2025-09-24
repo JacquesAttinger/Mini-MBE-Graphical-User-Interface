@@ -77,7 +77,8 @@ class PressureReader(QObject):
                         try:
                             print('Tried reading pressure')
                             value = pvp.read_pressure(self._ser, self._address)
-                            self.reading.emit(float(value))
+                            value_in_millibar = value * 1e3
+                            self.reading.emit(float(value_in_millibar))
                             time.sleep(1)
                         except Exception:
                             print('wasnt able to read pressure')
