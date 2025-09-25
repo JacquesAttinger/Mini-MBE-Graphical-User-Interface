@@ -1,8 +1,9 @@
 # Import smtplib for the actual sending function
 import smtplib
+import time
 
 sender = 'jacques.attinger@gmail.com'
-receiver = 'jacques.attinger@gmail.com'
+receiver = 'pearly805@gmail.com'
 
 subject = 'Automated email test'
 message = 'This is a test.'
@@ -14,6 +15,9 @@ server.starttls()
 
 server.login(sender, 'leximtegokofxrxa')
 
-server.sendmail(sender, receiver, text)
+for _ in range(100):
 
-print(f'email has been sent to {receiver}')
+    server.sendmail(sender, receiver, text)
+
+    print(f'email has been sent to {receiver}')
+    time.sleep(4)
