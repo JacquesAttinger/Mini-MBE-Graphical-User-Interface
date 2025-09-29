@@ -4,6 +4,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication
 
 from controllers.manipulator_manager import ManipulatorManager, MotionNeverStartedError
+from utils.speed import MIN_AXIS_SPEED
 
 
 class DummyCtrl:
@@ -60,7 +61,7 @@ def test_small_delta_uses_full_speed():
     start = (0.0, 0.0, 0.0)
     target = (0.1, 100.0, 0.0)
     assert mgr._move_axes(start, target, 0.01)
-    assert mgr.controllers['x']._last_speed == 0.0
+    assert mgr.controllers['x']._last_speed == pytest.approx(MIN_AXIS_SPEED)
     assert mgr.controllers['y']._last_speed == pytest.approx(0.01)
     total = (
         mgr.controllers['x']._last_speed**2 +
@@ -68,6 +69,22 @@ def test_small_delta_uses_full_speed():
         (mgr.controllers['z']._last_speed or 0.0)**2
     ) ** 0.5
     assert total == pytest.approx(0.01)
+
+
+def test_sub_100_nm_speed_not_clamped():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    mgr.controllers = {
+        'x': DummyCtrl(0.0),
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+    start = (0.0, 0.0, 0.0)
+    target = (1.0, 0.0, 0.0)
+    assert mgr._move_axes(start, target, MIN_AXIS_SPEED)
+    assert mgr.controllers['x']._last_speed == pytest.approx(MIN_AXIS_SPEED)
+    assert mgr.controllers['y']._last_speed is None
+    assert mgr.controllers['z']._last_speed is None
 
 
 def test_execute_path_logs_start_and_end():

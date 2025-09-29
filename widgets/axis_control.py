@@ -1,6 +1,8 @@
-from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout, 
+from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout,
                               QLabel, QDoubleSpinBox, QPushButton)
 from PySide6.QtCore import Signal
+
+from utils.speed import MIN_AXIS_SPEED
 
 class AxisControlWidget(QGroupBox):
     """Widget for controlling a single axis"""
@@ -29,7 +31,9 @@ class AxisControlWidget(QGroupBox):
         speed_layout = QHBoxLayout()
         speed_layout.addWidget(QLabel("Speed (mm/s):"))
         self.speed_spin = QDoubleSpinBox()
-        self.speed_spin.setRange(0.0001, 10)
+        self.speed_spin.setDecimals(6)
+        self.speed_spin.setRange(MIN_AXIS_SPEED, 10)
+        self.speed_spin.setSingleStep(MIN_AXIS_SPEED)
         self.speed_spin.setValue(0.1)
         speed_layout.addWidget(self.speed_spin)
         
