@@ -2,6 +2,7 @@
 
 import os
 import datetime
+from math import hypot
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -27,7 +28,7 @@ from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
 from widgets.modbus_panel import ModbusPanel
 
-from math import hypot
+from utils.speed import MIN_AXIS_SPEED
 
 # Manipulator workspace bounds in millimeters
 X_MIN_MM, X_MAX_MM = -50.0, 50.0
@@ -265,14 +266,16 @@ class MainWindow(QMainWindow):
 
         ps_label = QLabel("Print speed (mm/s)")
         ps_spin = QDoubleSpinBox()
-        ps_spin.setDecimals(4)
-        ps_spin.setRange(0.0001, 2.0)
+        ps_spin.setDecimals(6)
+        ps_spin.setRange(MIN_AXIS_SPEED, 2.0)
+        ps_spin.setSingleStep(MIN_AXIS_SPEED)
         ps_spin.setValue(self.print_speed)
 
         ts_label = QLabel("Travel speed (mm/s)")
         ts_spin = QDoubleSpinBox()
-        ts_spin.setDecimals(4)
-        ts_spin.setRange(0.0001, 2.0)
+        ts_spin.setDecimals(6)
+        ts_spin.setRange(MIN_AXIS_SPEED, 2.0)
+        ts_spin.setSingleStep(MIN_AXIS_SPEED)
         ts_spin.setValue(self.travel_speed)
 
         layout.addWidget(ps_label)

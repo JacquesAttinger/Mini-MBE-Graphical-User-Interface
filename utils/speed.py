@@ -5,9 +5,9 @@ import math
 # ----------------------------------------------------------------------
 # Physical speed constraints
 # ----------------------------------------------------------------------
-MIN_AXIS_SPEED = 1e-4  # mm/s
+MIN_AXIS_SPEED = 1e-5  # mm/s
 MAX_AXIS_SPEED = 1.0    # mm/s
-SPEED_THRESHOLD = 5e-5  # Threshold for rounding to zero
+SPEED_THRESHOLD = 5e-6  # Threshold for rounding to zero
 
 
 def validate_speed(speed: float) -> None:
