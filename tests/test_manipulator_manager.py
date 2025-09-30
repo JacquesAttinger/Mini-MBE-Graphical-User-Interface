@@ -113,3 +113,56 @@ def test_execute_path_logs_start_and_end():
     assert "start=(0.0, 0.0, 0.0)" in start[-1]["description"]
     assert "end=(1.0, 2.0, 3.0)" in end[-1]["description"]
     assert end[-1]["time"] >= start[-1]["time"]
+
+
+def test_stop_and_go_dwell_uses_measured_move_time(monkeypatch):
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    mgr.controllers = {
+        'x': DummyCtrl(0.0),
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+    mgr.nozzle_diameter_mm = 1.0
+
+    class FakeTime:
+        def __init__(self):
+            self.current = 0.0
+            self.slept = []
+
+        def time(self):
+            return self.current
+
+        def sleep(self, duration):
+            self.slept.append(duration)
+            self.current += duration
+
+        def advance(self, amount):
+            self.current += amount
+
+    fake_time = FakeTime()
+    monkeypatch.setattr("controllers.manipulator_manager.time.time", fake_time.time)
+    monkeypatch.setattr("controllers.manipulator_manager.time.sleep", fake_time.sleep)
+
+    actual_move_duration = 0.5
+    call_count = 0
+
+    def fake_move_axes(start, target, speed, force_direct=False):
+        nonlocal call_count
+        call_count += 1
+        fake_time.advance(actual_move_duration)
+        return True
+
+    mgr._move_axes = fake_move_axes
+
+    start = (0.0, 0.0, 0.0)
+    target = (0.2, 0.0, 0.0)
+    requested_speed = 0.1
+    distance = 0.2
+
+    assert mgr._move_axes_stop_and_go(start, target, requested_speed, distance)
+    assert call_count == 1
+
+    total_sleep = sum(fake_time.slept)
+    expected_dwell = max(0.0, (distance / requested_speed) - actual_move_duration)
+    assert total_sleep == pytest.approx(expected_dwell)

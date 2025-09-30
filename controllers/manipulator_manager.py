@@ -377,12 +377,25 @@ class ManipulatorManager(QObject):
                 start[2] + dz * frac,
             )
 
-            if not self._move_axes(prev_point, intermediate, move_speed, force_direct=True):
+            move_start = time.time()
+            move_end = move_start
+            try:
+                move_success = self._move_axes(
+                    prev_point, intermediate, move_speed, force_direct=True
+                )
+            finally:
+                move_end = time.time()
+
+            if not move_success:
                 return False
 
-            move_time = segment / move_speed
+            synthetic_move_time = segment / move_speed
+            actual_move_time = move_end - move_start
+            if actual_move_time <= 0:
+                actual_move_time = synthetic_move_time
+
             total_time = segment / requested_speed
-            dwell = max(0.0, total_time - move_time)
+            dwell = max(0.0, total_time - actual_move_time)
             if dwell > 0:
                 self._log_event(
                     "ALL",
