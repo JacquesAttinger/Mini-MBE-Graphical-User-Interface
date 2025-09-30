@@ -252,128 +252,152 @@ class ManipulatorManager(QObject):
         and ``False`` is returned.
         """
 
-        dx = target[0] - start[0]
-        dy = target[1] - start[1]
-        dz = target[2] - start[2]
-        distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
-        micro_move = distance <= EPSILON and force_direct
-        if distance <= EPSILON and not force_direct:
-            self._log_event(
-                "ALL",
-                "info",
-                f"Zero-distance move ignored start={start} target={target}",
-                "",
-            )
-            return True
-        if micro_move:
-            self._log_event(
-                "ALL",
-                "micro_move",
-                f"distance={distance:.6f} start={start} target={target}",
-                "",
-            )
-            if self.motion_log_enabled:
-                self._motion_logger.info(
-                    "t=%s axis=ALL micro_move distance=%.6f start=(%.6f,%.6f,%.6f) target=(%.6f,%.6f,%.6f)",
-                    time.time(),
-                    distance,
-                    start[0],
-                    start[1],
-                    start[2],
-                    target[0],
-                    target[1],
-                    target[2],
+        current_start = start
+        while True:
+            self._pause_event.wait()
+            dx = target[0] - current_start[0]
+            dy = target[1] - current_start[1]
+            dz = target[2] - current_start[2]
+            distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
+            micro_move = distance <= EPSILON and force_direct
+            if distance <= EPSILON and not force_direct:
+                self._log_event(
+                    "ALL",
+                    "info",
+                    f"Zero-distance move ignored start={current_start} target={target}",
+                    "",
+                )
+                return True
+            if micro_move:
+                self._log_event(
+                    "ALL",
+                    "micro_move",
+                    f"distance={distance:.6f} start={current_start} target={target}",
+                    "",
+                )
+                if self.motion_log_enabled:
+                    self._motion_logger.info(
+                        "t=%s axis=ALL micro_move distance=%.6f start=(%.6f,%.6f,%.6f) target=(%.6f,%.6f,%.6f)",
+                        time.time(),
+                        distance,
+                        current_start[0],
+                        current_start[1],
+                        current_start[2],
+                        target[0],
+                        target[1],
+                        target[2],
+                    )
+
+            if (
+                not force_direct
+                and speed < STOP_GO_SPEED_THRESHOLD
+                and self.nozzle_diameter_mm > 0.0
+            ):
+                return self._move_axes_stop_and_go(current_start, target, speed, distance)
+
+            deltas = [dx, dy, dz]
+            active_axes = []
+            for idx, axis in enumerate(("x", "y", "z")):
+                delta = deltas[idx]
+                if force_direct:
+                    if math.isclose(delta, 0.0, abs_tol=1e-9):
+                        continue
+                elif abs(delta) <= EPSILON:
+                    continue
+
+                axis_speed = adjust_axis_speed(abs(speed * delta / distance))
+                ctrl = self.controllers[axis]
+                try:
+                    ctrl.motor_on()
+                except Exception:
+                    pass
+                if self.motion_log_enabled:
+                    self._motion_logger.info(
+                        "t=%s axis=%s target=%.3f speed=%.3f",
+                        time.time(),
+                        axis,
+                        target[idx],
+                        axis_speed,
+                    )
+                ctrl.move_absolute(target[idx], axis_speed)
+                if hasattr(ctrl, "_last_speed"):
+                    assert (
+                        abs(ctrl._last_speed - axis_speed) <= EPSILON
+                    ), f"{axis} speed mismatch"
+                travel = abs(delta)
+                if axis_speed > 0 and math.isfinite(axis_speed):
+                    expected_move_time = travel / axis_speed
+                    wait_timeout = max(15.0, expected_move_time * 3.0)
+                else:
+                    wait_timeout = 15.0
+                self._log_event(
+                    axis,
+                    "move",
+                    f"target={target[idx]} speed={axis_speed}",
+                    "",
+                )
+                active_axes.append((axis, target[idx], axis_speed, wait_timeout))
+
+            paused = False
+            for axis, pos, axis_speed, wait_timeout in active_axes:
+                ctrl = self.controllers[axis]
+                try:
+                    ok = ctrl.wait_until_in_position(
+                        timeout=wait_timeout,
+                        target=pos,
+                        pause_event=self._pause_event,
+                    )
+                except MotionNeverStartedError as exc:
+                    # Capture diagnostic registers right away to record the
+                    # controller state responsible for ignoring the move command.
+                    status = ctrl._read_status()
+                    err = ctrl.read_error_code()
+                    msg = str(exc)
+                    self._log_event(
+                        axis,
+                        "error",
+                        msg,
+                        f"err={err};status={status}",
+                    )
+                    self.error_occurred.emit(axis, msg)
+                    return False
+                if ok is None:
+                    paused = True
+                    break
+                if not ok:
+                    err = ctrl.read_error_code()
+                    status = ctrl._read_status()
+                    msg = (
+                        f"Failed to reach position (err={err}, status={status})"
+                    )
+                    self._log_event(
+                        axis,
+                        "error",
+                        msg,
+                        f"err={err};status={status}",
+                    )
+                    self.error_occurred.emit(axis, msg)
+                    return False
+                self._log_event(
+                    axis,
+                    "in_position",
+                    f"target={pos} speed={axis_speed}",
+                    "",
                 )
 
-        if (
-            not force_direct
-            and speed < STOP_GO_SPEED_THRESHOLD
-            and self.nozzle_diameter_mm > 0.0
-        ):
-            return self._move_axes_stop_and_go(start, target, speed, distance)
-
-        deltas = [dx, dy, dz]
-        active_axes = []
-        for idx, axis in enumerate(("x", "y", "z")):
-            delta = deltas[idx]
-            if force_direct:
-                if math.isclose(delta, 0.0, abs_tol=1e-9):
-                    continue
-            elif abs(delta) <= EPSILON:
+            if paused:
+                self._pause_event.wait()
+                coords = []
+                for idx, axis in enumerate(("x", "y", "z")):
+                    ctrl = self.controllers.get(axis)
+                    try:
+                        coords.append(ctrl.read_position())
+                    except Exception:
+                        coords.append(current_start[idx])
+                current_start = tuple(coords)
                 continue
 
-            axis_speed = adjust_axis_speed(abs(speed * delta / distance))
-            ctrl = self.controllers[axis]
-            try:
-                ctrl.motor_on()
-            except Exception:
-                pass
-            if self.motion_log_enabled:
-                self._motion_logger.info(
-                    "t=%s axis=%s target=%.3f speed=%.3f",
-                    time.time(),
-                    axis,
-                    target[idx],
-                    axis_speed,
-                )
-            ctrl.move_absolute(target[idx], axis_speed)
-            if hasattr(ctrl, "_last_speed"):
-                assert (
-                    abs(ctrl._last_speed - axis_speed) <= EPSILON
-                ), f"{axis} speed mismatch"
-            travel = abs(delta)
-            if axis_speed > 0 and math.isfinite(axis_speed):
-                expected_move_time = travel / axis_speed
-                wait_timeout = max(15.0, expected_move_time * 3.0)
-            else:
-                wait_timeout = 15.0
-            self._log_event(
-                axis,
-                "move",
-                f"target={target[idx]} speed={axis_speed}",
-                "",
-            )
-            active_axes.append((axis, target[idx], axis_speed, wait_timeout))
-
-        for axis, pos, axis_speed, wait_timeout in active_axes:
-            ctrl = self.controllers[axis]
-            try:
-                ok = ctrl.wait_until_in_position(timeout=wait_timeout, target=pos)
-            except MotionNeverStartedError as exc:
-                # Capture diagnostic registers right away to record the
-                # controller state responsible for ignoring the move command.
-                status = ctrl._read_status()
-                err = ctrl.read_error_code()
-                msg = str(exc)
-                self._log_event(
-                    axis,
-                    "error",
-                    msg,
-                    f"err={err};status={status}",
-                )
-                self.error_occurred.emit(axis, msg)
-                return False
-            if not ok:
-                err = ctrl.read_error_code()
-                status = ctrl._read_status()
-                msg = (
-                    f"Failed to reach position (err={err}, status={status})"
-                )
-                self._log_event(
-                    axis,
-                    "error",
-                    msg,
-                    f"err={err};status={status}",
-                )
-                self.error_occurred.emit(axis, msg)
-                return False
-            self._log_event(
-                axis,
-                "in_position",
-                f"target={pos} speed={axis_speed}",
-                "",
-            )
-        return True
+            return True
 
     def _move_axes_stop_and_go(
         self,
@@ -473,12 +497,26 @@ class ManipulatorManager(QObject):
     def pause_path(self):
         """Pause the currently executing path."""
         self._pause_event.clear()
+        self._stop_all_motion()
         self.status_updated.emit("Pattern paused")
 
     def resume_path(self):
         """Resume a paused path."""
         self._pause_event.set()
         self.status_updated.emit("Pattern resumed")
+
+    def _stop_all_motion(self) -> None:
+        """Issue an emergency stop to every connected axis."""
+
+        for axis, ctrl in self.controllers.items():
+            emergency_stop = getattr(ctrl, "emergency_stop", None)
+            if emergency_stop is None:
+                continue
+            try:
+                emergency_stop()
+            except Exception:
+                # Best effort – stopping is more important than reporting here
+                pass
 
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
         """Execute a series of 3D vertices sequentially at a constant speed."""
