@@ -25,7 +25,7 @@ class DummyCtrl:
     def read_position(self):
         return self.pos
 
-    def wait_until_in_position(self, target: float):
+    def wait_until_in_position(self, target: float, timeout: float = 15.0):
         return True
 
     def _read_status(self):
@@ -33,6 +33,16 @@ class DummyCtrl:
 
     def read_error_code(self):
         return 0
+
+
+class TimeoutSpyCtrl(DummyCtrl):
+    def __init__(self, start_pos: float):
+        super().__init__(start_pos)
+        self.timeouts = []
+
+    def wait_until_in_position(self, target: float, timeout: float = 15.0):
+        self.timeouts.append(timeout)
+        return True
 
 
 def test_cross_origin_move_uses_positive_speed():
@@ -166,3 +176,22 @@ def test_stop_and_go_dwell_uses_measured_move_time(monkeypatch):
     total_sleep = sum(fake_time.slept)
     expected_dwell = max(0.0, (distance / requested_speed) - actual_move_duration)
     assert total_sleep == pytest.approx(expected_dwell)
+
+
+def test_move_axes_scales_wait_timeout_for_slow_moves():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    spy = TimeoutSpyCtrl(0.0)
+    mgr.controllers = {
+        'x': spy,
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+
+    start = (0.0, 0.0, 0.0)
+    target = (0.05, 0.0, 0.0)
+    slow_speed = 1e-3
+
+    assert mgr._move_axes(start, target, slow_speed)
+    assert spy.timeouts
+    assert spy.timeouts[-1] > 15.0
