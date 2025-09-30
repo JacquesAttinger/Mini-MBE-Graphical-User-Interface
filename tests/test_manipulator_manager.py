@@ -3,7 +3,12 @@ import threading
 import pytest
 from PySide6.QtCore import QCoreApplication
 
-from controllers.manipulator_manager import ManipulatorManager, MotionNeverStartedError
+from controllers.manipulator_manager import (
+    EPSILON,
+    STOP_GO_SPEED_THRESHOLD,
+    ManipulatorManager,
+    MotionNeverStartedError,
+)
 from utils.speed import MIN_AXIS_SPEED
 
 
@@ -195,3 +200,29 @@ def test_move_axes_scales_wait_timeout_for_slow_moves():
     assert mgr._move_axes(start, target, slow_speed)
     assert spy.timeouts
     assert spy.timeouts[-1] > 15.0
+
+
+def test_stop_and_go_micro_moves_are_logged():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    mgr.controllers = {
+        'x': DummyCtrl(0.0),
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+
+    mgr.nozzle_diameter_mm = 0.001  # ensures stop-and-go uses epsilon sized hops
+
+    start = (0.0, 0.0, 0.0)
+    target = (EPSILON / 2, 0.0, 0.0)
+    slow_speed = STOP_GO_SPEED_THRESHOLD / 2
+
+    assert mgr._move_axes(start, target, slow_speed)
+    assert mgr.controllers['x'].pos == pytest.approx(target[0])
+
+    log = mgr.get_modbus_log()
+    moves = [e for e in log if e["axis"] == "x" and e["action"] == "move"]
+    assert moves, "micro move should produce an axis move log entry"
+    micro = [e for e in log if e["axis"] == "ALL" and e["action"] == "micro_move"]
+    assert micro, "micro move summary should be recorded"
+    assert f"target={target[0]}" in moves[-1]["description"]
