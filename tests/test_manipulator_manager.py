@@ -30,8 +30,11 @@ class DummyCtrl:
     def read_position(self):
         return self.pos
 
-    def wait_until_in_position(self, target: float, timeout: float = 15.0):
+    def wait_until_in_position(self, target: float, timeout: float = 15.0, pause_event=None):
         return True
+
+    def emergency_stop(self):
+        pass
 
     def _read_status(self):
         return 0
@@ -45,7 +48,7 @@ class TimeoutSpyCtrl(DummyCtrl):
         super().__init__(start_pos)
         self.timeouts = []
 
-    def wait_until_in_position(self, target: float, timeout: float = 15.0):
+    def wait_until_in_position(self, target: float, timeout: float = 15.0, pause_event=None):
         self.timeouts.append(timeout)
         return True
 
