@@ -15,6 +15,7 @@ from controllers.smcd14_controller import (
 from utils.speed import adjust_axis_speed
 
 STOP_GO_SPEED_THRESHOLD = 1e-4  # mm/s
+STOP_GO_HOP_SPEED = 1e-3        # mm/s
 STOP_GO_STEP_FRACTION = 0.5     # move half the nozzle diameter each hop
 
 # Default connection settings
@@ -357,7 +358,7 @@ class ManipulatorManager(QObject):
 
         step_length = max(self.nozzle_diameter_mm * STOP_GO_STEP_FRACTION, EPSILON)
         steps = max(1, math.ceil(distance / step_length))
-        move_speed = max(STOP_GO_SPEED_THRESHOLD, requested_speed)
+        move_speed = max(STOP_GO_HOP_SPEED, requested_speed)
 
         dx = target[0] - start[0]
         dy = target[1] - start[1]
