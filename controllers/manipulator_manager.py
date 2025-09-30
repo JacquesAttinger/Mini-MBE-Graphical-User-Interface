@@ -1,6 +1,7 @@
 """High level manager for multiple manipulator axes."""
 
 import logging
+import math
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -12,6 +13,9 @@ from controllers.smcd14_controller import (
     MotionNeverStartedError,
 )
 from utils.speed import adjust_axis_speed
+
+STOP_GO_SPEED_THRESHOLD = 1e-4  # mm/s
+STOP_GO_STEP_FRACTION = 0.5     # move half the nozzle diameter each hop
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -63,6 +67,15 @@ class ManipulatorManager(QObject):
         self._monitor_thread = None
         self._pause_event = threading.Event()
         self._pause_event.set()
+        self.nozzle_diameter_mm = 0.0
+
+    # ------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------
+    def set_nozzle_diameter(self, diameter_mm: float) -> None:
+        """Update the cached nozzle diameter used for stop-and-go motion."""
+
+        self.nozzle_diameter_mm = max(0.0, float(diameter_mm))
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -223,6 +236,8 @@ class ManipulatorManager(QObject):
         start: Tuple[float, float, float],
         target: Tuple[float, float, float],
         speed: float,
+        *,
+        force_direct: bool = False,
     ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
@@ -248,6 +263,13 @@ class ManipulatorManager(QObject):
                 "",
             )
             return True
+
+        if (
+            not force_direct
+            and speed < STOP_GO_SPEED_THRESHOLD
+            and self.nozzle_diameter_mm > 0.0
+        ):
+            return self._move_axes_stop_and_go(start, target, speed, distance)
 
         deltas = [dx, dy, dz]
         active_axes = []
@@ -319,6 +341,64 @@ class ManipulatorManager(QObject):
                 f"target={pos} speed={axis_speed}",
                 "",
             )
+        return True
+
+    def _move_axes_stop_and_go(
+        self,
+        start: Tuple[float, float, float],
+        target: Tuple[float, float, float],
+        requested_speed: float,
+        distance: float,
+    ) -> bool:
+        """Approximate very slow motion by hop-dwell cycles."""
+
+        if requested_speed <= 0.0:
+            raise ValueError("Requested speed must be positive for stop-and-go mode")
+
+        step_length = max(self.nozzle_diameter_mm * STOP_GO_STEP_FRACTION, EPSILON)
+        steps = max(1, math.ceil(distance / step_length))
+        move_speed = max(STOP_GO_SPEED_THRESHOLD, requested_speed)
+
+        dx = target[0] - start[0]
+        dy = target[1] - start[1]
+        dz = target[2] - start[2]
+
+        prev_point = start
+        travelled = 0.0
+        for step in range(1, steps + 1):
+            remaining = distance - travelled
+            segment = min(step_length, remaining)
+            travelled += segment
+            frac = travelled / distance if distance else 1.0
+            intermediate = (
+                start[0] + dx * frac,
+                start[1] + dy * frac,
+                start[2] + dz * frac,
+            )
+
+            if not self._move_axes(prev_point, intermediate, move_speed, force_direct=True):
+                return False
+
+            move_time = segment / move_speed
+            total_time = segment / requested_speed
+            dwell = max(0.0, total_time - move_time)
+            if dwell > 0:
+                self._log_event(
+                    "ALL",
+                    "dwell",
+                    f"segment={segment:.6f}mm dwell={dwell:.3f}s",
+                    "",
+                )
+                remaining_dwell = dwell
+                while remaining_dwell > 0:
+                    self._pause_event.wait()
+                    chunk = min(0.1, remaining_dwell)
+                    start_sleep = time.time()
+                    time.sleep(chunk)
+                    elapsed = time.time() - start_sleep
+                    remaining_dwell -= elapsed
+            prev_point = intermediate
+
         return True
 
     def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:

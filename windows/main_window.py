@@ -370,6 +370,7 @@ class MainWindow(QMainWindow):
         self.nozzle_input.setSuffix(" µm")
         self.nozzle_input.setRange(1.0, 1000.0)
         self.nozzle_input.setValue(12.0)
+        self.nozzle_input.setSingleStep(0.5)
         right_layout.addWidget(self.nozzle_input)
 
         self.start_pattern_btn = QPushButton("Start Pattern")
@@ -426,6 +427,8 @@ class MainWindow(QMainWindow):
         )
         self.manager.pattern_progress.connect(self._update_pattern_progress)
         self.manager.pattern_completed.connect(self._handle_pattern_completed)
+        self.nozzle_input.valueChanged.connect(self._on_nozzle_changed)
+        self._on_nozzle_changed(self.nozzle_input.value())
 
     # ------------------------------------------------------------------
     # Slots
@@ -654,6 +657,11 @@ class MainWindow(QMainWindow):
         self.pause_pattern_btn.setText("Pause Pattern")
         if self.modbus_panel.auto_logging_active:
             self.modbus_panel.stop_log()
+
+    def _on_nozzle_changed(self, diameter_um: float):
+        """Propagate nozzle size updates to the manager."""
+
+        self.manager.set_nozzle_diameter(float(diameter_um) / 1000.0)
 
     # ------------------------------------------------------------------
     # Qt events
