@@ -16,7 +16,7 @@ from utils.speed import adjust_axis_speed
 
 STOP_GO_SPEED_THRESHOLD = 1e-4  # mm/s
 STOP_GO_HOP_SPEED = 1e-3        # mm/s
-STOP_GO_STEP_FRACTION = 0.5     # move half the nozzle diameter each hop
+STOP_GO_STEP_FRACTION = 0.1     # move a fraction of the nozzle diameter each hop
 
 # Default connection settings
 HOST = "169.254.151.255"
