@@ -296,18 +296,24 @@ class ManipulatorManager(QObject):
                     assert (
                         abs(ctrl._last_speed - axis_speed) <= EPSILON
                     ), f"{axis} speed mismatch"
+                travel = abs(delta)
+                if axis_speed > 0 and math.isfinite(axis_speed):
+                    expected_move_time = travel / axis_speed
+                    wait_timeout = max(15.0, expected_move_time * 3.0)
+                else:
+                    wait_timeout = 15.0
                 self._log_event(
                     axis,
                     "move",
                     f"target={target[idx]} speed={axis_speed}",
                     "",
                 )
-                active_axes.append((axis, target[idx], axis_speed))
+                active_axes.append((axis, target[idx], axis_speed, wait_timeout))
 
-        for axis, pos, axis_speed in active_axes:
+        for axis, pos, axis_speed, wait_timeout in active_axes:
             ctrl = self.controllers[axis]
             try:
-                ok = ctrl.wait_until_in_position(target=pos)
+                ok = ctrl.wait_until_in_position(timeout=wait_timeout, target=pos)
             except MotionNeverStartedError as exc:
                 # Capture diagnostic registers right away to record the
                 # controller state responsible for ignoring the move command.
