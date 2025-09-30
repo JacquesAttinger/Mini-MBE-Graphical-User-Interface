@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
         self._commands = []
         self.print_speed = 0.1
         self.travel_speed = 0.5
+        self._pending_pattern_duration = 0.0
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
@@ -598,7 +599,8 @@ class MainWindow(QMainWindow):
             self.manager.reset_path_state()
 
         estimated = self._estimate_pattern_duration()
-        self._initialize_pattern_timer(estimated)
+        self._pending_pattern_duration = estimated
+        self._stop_pattern_timer(reset_label=True)
 
         first = self._vertices[0]
 
@@ -630,6 +632,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.Yes,
             )
             if reply == QMessageBox.Yes:
+                self._initialize_pattern_timer(self._pending_pattern_duration)
+                self._pending_pattern_duration = 0.0
                 self.pause_pattern_btn.setEnabled(True)
                 try:
                     self.manager.execute_recipe(
@@ -645,6 +649,7 @@ class MainWindow(QMainWindow):
                 self.pause_pattern_btn.setEnabled(False)
                 self.status_panel.log_message("Pattern start cancelled")
                 self._stop_pattern_timer(reset_label=True)
+                self._pending_pattern_duration = 0.0
                 if self.modbus_panel.auto_logging_active:
                     self.modbus_panel.stop_log()
 

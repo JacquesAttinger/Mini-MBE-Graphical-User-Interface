@@ -3,7 +3,7 @@ import asyncio
 import logging
 import struct
 import time
-from threading import Lock
+from threading import Event, Lock
 from contextlib import nullcontext
 
 from pymodbus.client import ModbusTcpClient
@@ -227,7 +227,12 @@ class ManipulatorController:
                 f"{CLEAR_REQ_ADDR}=1->0",
             )
 
-    def wait_until_in_position(self, timeout: float = 15.0, target: Optional[float] = None) -> bool:
+    def wait_until_in_position(
+        self,
+        timeout: float = 15.0,
+        target: Optional[float] = None,
+        pause_event: Optional[Event] = None,
+    ) -> Optional[bool]:
         self._check_connection()
         last_change = time.time()
         motion_started = False
@@ -236,6 +241,7 @@ class ManipulatorController:
             last_pos = self.read_position()
         except Exception:
             last_pos = None
+        paused = False
 
         while True:
             status_val = self._read_status()
@@ -253,6 +259,18 @@ class ManipulatorController:
                 and in_pos
             ):
                 return True
+
+            if pause_event is not None and not pause_event.is_set():
+                if not paused:
+                    try:
+                        self.emergency_stop()
+                    except Exception:
+                        pass
+                    paused = True
+                if not running:
+                    return None
+                time.sleep(0.05)
+                continue
 
             if running:
                 motion_started = True
