@@ -256,7 +256,8 @@ class ManipulatorManager(QObject):
         dy = target[1] - start[1]
         dz = target[2] - start[2]
         distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
-        if distance <= EPSILON:
+        micro_move = distance <= EPSILON and force_direct
+        if distance <= EPSILON and not force_direct:
             self._log_event(
                 "ALL",
                 "info",
@@ -264,6 +265,25 @@ class ManipulatorManager(QObject):
                 "",
             )
             return True
+        if micro_move:
+            self._log_event(
+                "ALL",
+                "micro_move",
+                f"distance={distance:.6f} start={start} target={target}",
+                "",
+            )
+            if self.motion_log_enabled:
+                self._motion_logger.info(
+                    "t=%s axis=ALL micro_move distance=%.6f start=(%.6f,%.6f,%.6f) target=(%.6f,%.6f,%.6f)",
+                    time.time(),
+                    distance,
+                    start[0],
+                    start[1],
+                    start[2],
+                    target[0],
+                    target[1],
+                    target[2],
+                )
 
         if (
             not force_direct
@@ -276,39 +296,44 @@ class ManipulatorManager(QObject):
         active_axes = []
         for idx, axis in enumerate(("x", "y", "z")):
             delta = deltas[idx]
-            if abs(delta) > EPSILON:
-                axis_speed = adjust_axis_speed(abs(speed * delta / distance))
-                ctrl = self.controllers[axis]
-                try:
-                    ctrl.motor_on()
-                except Exception:
-                    pass
-                if self.motion_log_enabled:
-                    self._motion_logger.info(
-                        "t=%s axis=%s target=%.3f speed=%.3f",
-                        time.time(),
-                        axis,
-                        target[idx],
-                        axis_speed,
-                    )
-                ctrl.move_absolute(target[idx], axis_speed)
-                if hasattr(ctrl, "_last_speed"):
-                    assert (
-                        abs(ctrl._last_speed - axis_speed) <= EPSILON
-                    ), f"{axis} speed mismatch"
-                travel = abs(delta)
-                if axis_speed > 0 and math.isfinite(axis_speed):
-                    expected_move_time = travel / axis_speed
-                    wait_timeout = max(15.0, expected_move_time * 3.0)
-                else:
-                    wait_timeout = 15.0
-                self._log_event(
+            if force_direct:
+                if math.isclose(delta, 0.0, abs_tol=1e-9):
+                    continue
+            elif abs(delta) <= EPSILON:
+                continue
+
+            axis_speed = adjust_axis_speed(abs(speed * delta / distance))
+            ctrl = self.controllers[axis]
+            try:
+                ctrl.motor_on()
+            except Exception:
+                pass
+            if self.motion_log_enabled:
+                self._motion_logger.info(
+                    "t=%s axis=%s target=%.3f speed=%.3f",
+                    time.time(),
                     axis,
-                    "move",
-                    f"target={target[idx]} speed={axis_speed}",
-                    "",
+                    target[idx],
+                    axis_speed,
                 )
-                active_axes.append((axis, target[idx], axis_speed, wait_timeout))
+            ctrl.move_absolute(target[idx], axis_speed)
+            if hasattr(ctrl, "_last_speed"):
+                assert (
+                    abs(ctrl._last_speed - axis_speed) <= EPSILON
+                ), f"{axis} speed mismatch"
+            travel = abs(delta)
+            if axis_speed > 0 and math.isfinite(axis_speed):
+                expected_move_time = travel / axis_speed
+                wait_timeout = max(15.0, expected_move_time * 3.0)
+            else:
+                wait_timeout = 15.0
+            self._log_event(
+                axis,
+                "move",
+                f"target={target[idx]} speed={axis_speed}",
+                "",
+            )
+            active_axes.append((axis, target[idx], axis_speed, wait_timeout))
 
         for axis, pos, axis_speed, wait_timeout in active_axes:
             ctrl = self.controllers[axis]
