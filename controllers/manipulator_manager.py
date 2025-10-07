@@ -4,7 +4,7 @@ import logging
 import math
 import threading
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -69,6 +69,8 @@ class ManipulatorManager(QObject):
         self._pause_event = threading.Event()
         self._pause_event.set()
         self.nozzle_diameter_mm = 0.0
+        self._abort_lock = threading.Lock()
+        self._aborted_axes: Set[str] = set()
 
     # ------------------------------------------------------------------
     # Configuration
@@ -177,6 +179,7 @@ class ManipulatorManager(QObject):
             except Exception:
                 pass
             axis_speed = adjust_axis_speed(abs(speed))
+            self._clear_axis_abort(axis)
             ctrl.move_absolute(position, axis_speed)
             try:
                 ok = ctrl.wait_until_in_position(target=position)
@@ -195,6 +198,14 @@ class ManipulatorManager(QObject):
                 )
                 raise
             if not ok:
+                if self._consume_axis_abort(axis):
+                    self._log_event(
+                        axis,
+                        "aborted",
+                        f"target={position} speed={axis_speed}",
+                        "",
+                    )
+                    return f"{axis.upper()} move stopped"
                 err = ctrl.read_error_code()
                 status = ctrl._read_status()
                 msg = (
@@ -207,6 +218,14 @@ class ManipulatorManager(QObject):
                     f"err={err};status={status}",
                 )
                 raise RuntimeError(msg)
+            if self._consume_axis_abort(axis):
+                self._log_event(
+                    axis,
+                    "aborted",
+                    f"target={position} speed={axis_speed}",
+                    "",
+                )
+                return f"{axis.upper()} move stopped"
             return f"{axis.upper()} moved to {position:.3f} mm"
 
         self._run_async(axis, action, position, speed)
@@ -218,6 +237,7 @@ class ManipulatorManager(QObject):
             ctrl.emergency_stop()
             return f"{axis.upper()} emergency stop executed"
 
+        self._mark_axis_aborted(axis)
         self._run_async(axis, action)
 
     def home_axis(self, axis: str):
@@ -260,6 +280,12 @@ class ManipulatorManager(QObject):
             dz = target[2] - current_start[2]
             distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
             micro_move = distance <= EPSILON and force_direct
+            if (
+                not force_direct
+                and speed < STOP_GO_SPEED_THRESHOLD
+                and self.nozzle_diameter_mm > 0.0
+            ):
+                return self._move_axes_stop_and_go(current_start, target, speed, distance)
             if distance <= EPSILON and not force_direct:
                 self._log_event(
                     "ALL",
@@ -288,13 +314,6 @@ class ManipulatorManager(QObject):
                         target[2],
                     )
 
-            if (
-                not force_direct
-                and speed < STOP_GO_SPEED_THRESHOLD
-                and self.nozzle_diameter_mm > 0.0
-            ):
-                return self._move_axes_stop_and_go(current_start, target, speed, distance)
-
             deltas = [dx, dy, dz]
             active_axes = []
             for idx, axis in enumerate(("x", "y", "z")):
@@ -311,6 +330,7 @@ class ManipulatorManager(QObject):
                     ctrl.motor_on()
                 except Exception:
                     pass
+                self._clear_axis_abort(axis)
                 if self.motion_log_enabled:
                     self._motion_logger.info(
                         "t=%s axis=%s target=%.3f speed=%.3f",
@@ -339,6 +359,7 @@ class ManipulatorManager(QObject):
                 active_axes.append((axis, target[idx], axis_speed, wait_timeout))
 
             paused = False
+            aborted = False
             for axis, pos, axis_speed, wait_timeout in active_axes:
                 ctrl = self.controllers[axis]
                 try:
@@ -365,6 +386,16 @@ class ManipulatorManager(QObject):
                     paused = True
                     break
                 if not ok:
+                    if self._consume_axis_abort(axis):
+                        self._log_event(
+                            axis,
+                            "aborted",
+                            f"target={pos} speed={axis_speed}",
+                            "",
+                        )
+                        self.status_updated.emit(f"{axis.upper()} move stopped")
+                        aborted = True
+                        break
                     err = ctrl.read_error_code()
                     status = ctrl._read_status()
                     msg = (
@@ -396,6 +427,9 @@ class ManipulatorManager(QObject):
                         coords.append(current_start[idx])
                 current_start = tuple(coords)
                 continue
+
+            if aborted:
+                return False
 
             return True
 
@@ -512,11 +546,27 @@ class ManipulatorManager(QObject):
             emergency_stop = getattr(ctrl, "emergency_stop", None)
             if emergency_stop is None:
                 continue
+            self._mark_axis_aborted(axis)
             try:
                 emergency_stop()
             except Exception:
                 # Best effort – stopping is more important than reporting here
                 pass
+
+    def _mark_axis_aborted(self, axis: str) -> None:
+        with self._abort_lock:
+            self._aborted_axes.add(axis)
+
+    def _consume_axis_abort(self, axis: str) -> bool:
+        with self._abort_lock:
+            if axis in self._aborted_axes:
+                self._aborted_axes.remove(axis)
+                return True
+            return False
+
+    def _clear_axis_abort(self, axis: str) -> None:
+        with self._abort_lock:
+            self._aborted_axes.discard(axis)
 
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
         """Execute a series of 3D vertices sequentially at a constant speed."""
