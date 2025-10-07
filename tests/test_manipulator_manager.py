@@ -1,3 +1,4 @@
+import math
 import threading
 
 import pytest
@@ -6,6 +7,7 @@ from PySide6.QtCore import QCoreApplication
 from controllers.manipulator_manager import (
     EPSILON,
     STOP_GO_SPEED_THRESHOLD,
+    STOP_GO_STEP_FRACTION,
     ManipulatorManager,
     MotionNeverStartedError,
 )
@@ -51,6 +53,17 @@ class TimeoutSpyCtrl(DummyCtrl):
     def wait_until_in_position(self, target: float, timeout: float = 15.0, pause_event=None):
         self.timeouts.append(timeout)
         return True
+
+
+class AbortingCtrl(DummyCtrl):
+    def __init__(self, start_pos: float, manager, axis: str):
+        super().__init__(start_pos)
+        self.manager = manager
+        self.axis = axis
+
+    def wait_until_in_position(self, target: float, timeout: float = 15.0, pause_event=None):
+        self.manager._mark_axis_aborted(self.axis)
+        return False
 
 
 def test_cross_origin_move_uses_positive_speed():
@@ -179,10 +192,13 @@ def test_stop_and_go_dwell_uses_measured_move_time(monkeypatch):
     distance = 0.2
 
     assert mgr._move_axes_stop_and_go(start, target, requested_speed, distance)
-    assert call_count == 1
+    step_length = max(mgr.nozzle_diameter_mm * STOP_GO_STEP_FRACTION, EPSILON)
+    expected_calls = max(1, math.ceil(distance / step_length))
+    assert call_count == expected_calls
 
     total_sleep = sum(fake_time.slept)
-    expected_dwell = max(0.0, (distance / requested_speed) - actual_move_duration)
+    expected_move_time = call_count * actual_move_duration
+    expected_dwell = max(0.0, (distance / requested_speed) - expected_move_time)
     assert total_sleep == pytest.approx(expected_dwell)
 
 
@@ -229,3 +245,55 @@ def test_stop_and_go_micro_moves_are_logged():
     micro = [e for e in log if e["axis"] == "ALL" and e["action"] == "micro_move"]
     assert micro, "micro move summary should be recorded"
     assert f"target={target[0]}" in moves[-1]["description"]
+
+
+def test_manual_stop_does_not_emit_error_for_path():
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    aborting = AbortingCtrl(0.0, mgr, 'x')
+    mgr.controllers = {
+        'x': aborting,
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+
+    errors = []
+    mgr.error_occurred.connect(lambda axis, msg: errors.append((axis, msg)))
+
+    start = (0.0, 0.0, 0.0)
+    target = (1.0, 0.0, 0.0)
+
+    assert not mgr._move_axes(start, target, 0.1)
+    assert not errors
+    log = mgr.get_modbus_log()
+    aborted = [e for e in log if e["axis"] == "x" and e["action"] == "aborted"]
+    assert aborted
+
+
+def test_manual_stop_reports_status_for_single_axis(monkeypatch):
+    app = QCoreApplication.instance() or QCoreApplication([])
+    mgr = ManipulatorManager(motion_logging=False)
+    aborting = AbortingCtrl(0.0, mgr, 'x')
+    mgr.controllers = {
+        'x': aborting,
+        'y': DummyCtrl(0.0),
+        'z': DummyCtrl(0.0),
+    }
+
+    messages = []
+    mgr.status_updated.connect(messages.append)
+    errors = []
+    mgr.error_occurred.connect(lambda axis, msg: errors.append((axis, msg)))
+
+    def run_async(axis, action, *args):
+        result = action(mgr.controllers[axis], *args)
+        if result:
+            mgr.status_updated.emit(result)
+
+    monkeypatch.setattr(mgr, "_run_async", run_async)
+
+    mgr.move_axis('x', 1.0, 0.1)
+
+    assert messages
+    assert messages[-1] == "X move stopped"
+    assert not errors
