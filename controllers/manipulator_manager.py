@@ -1,9 +1,10 @@
 """High level manager for multiple manipulator axes."""
 
 import logging
+import math
 import threading
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -12,6 +13,10 @@ from controllers.smcd14_controller import (
     MotionNeverStartedError,
 )
 from utils.speed import adjust_axis_speed
+
+STOP_GO_SPEED_THRESHOLD = 1e-4  # mm/s
+STOP_GO_HOP_SPEED = 1e-3        # mm/s
+STOP_GO_STEP_FRACTION = 0.1     # move a fraction of the nozzle diameter each hop
 
 # Default connection settings
 HOST = "169.254.151.255"
@@ -63,6 +68,17 @@ class ManipulatorManager(QObject):
         self._monitor_thread = None
         self._pause_event = threading.Event()
         self._pause_event.set()
+        self.nozzle_diameter_mm = 0.0
+        self._abort_lock = threading.Lock()
+        self._aborted_axes: Set[str] = set()
+
+    # ------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------
+    def set_nozzle_diameter(self, diameter_mm: float) -> None:
+        """Update the cached nozzle diameter used for stop-and-go motion."""
+
+        self.nozzle_diameter_mm = max(0.0, float(diameter_mm))
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -163,6 +179,7 @@ class ManipulatorManager(QObject):
             except Exception:
                 pass
             axis_speed = adjust_axis_speed(abs(speed))
+            self._clear_axis_abort(axis)
             ctrl.move_absolute(position, axis_speed)
             try:
                 ok = ctrl.wait_until_in_position(target=position)
@@ -181,6 +198,14 @@ class ManipulatorManager(QObject):
                 )
                 raise
             if not ok:
+                if self._consume_axis_abort(axis):
+                    self._log_event(
+                        axis,
+                        "aborted",
+                        f"target={position} speed={axis_speed}",
+                        "",
+                    )
+                    return f"{axis.upper()} move stopped"
                 err = ctrl.read_error_code()
                 status = ctrl._read_status()
                 msg = (
@@ -193,6 +218,14 @@ class ManipulatorManager(QObject):
                     f"err={err};status={status}",
                 )
                 raise RuntimeError(msg)
+            if self._consume_axis_abort(axis):
+                self._log_event(
+                    axis,
+                    "aborted",
+                    f"target={position} speed={axis_speed}",
+                    "",
+                )
+                return f"{axis.upper()} move stopped"
             return f"{axis.upper()} moved to {position:.3f} mm"
 
         self._run_async(axis, action, position, speed)
@@ -204,6 +237,7 @@ class ManipulatorManager(QObject):
             ctrl.emergency_stop()
             return f"{axis.upper()} emergency stop executed"
 
+        self._mark_axis_aborted(axis)
         self._run_async(axis, action)
 
     def home_axis(self, axis: str):
@@ -223,6 +257,8 @@ class ManipulatorManager(QObject):
         start: Tuple[float, float, float],
         target: Tuple[float, float, float],
         speed: float,
+        *,
+        force_direct: bool = False,
     ) -> bool:
         """Issue move commands for axes that actually need to travel.
 
@@ -236,30 +272,65 @@ class ManipulatorManager(QObject):
         and ``False`` is returned.
         """
 
-        dx = target[0] - start[0]
-        dy = target[1] - start[1]
-        dz = target[2] - start[2]
-        distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
-        if distance <= EPSILON:
-            self._log_event(
-                "ALL",
-                "info",
-                f"Zero-distance move ignored start={start} target={target}",
-                "",
-            )
-            return True
+        current_start = start
+        while True:
+            self._pause_event.wait()
+            dx = target[0] - current_start[0]
+            dy = target[1] - current_start[1]
+            dz = target[2] - current_start[2]
+            distance = (dx ** 2 + dy ** 2 + dz ** 2) ** 0.5
+            micro_move = distance <= EPSILON and force_direct
+            if (
+                not force_direct
+                and speed < STOP_GO_SPEED_THRESHOLD
+                and self.nozzle_diameter_mm > 0.0
+            ):
+                return self._move_axes_stop_and_go(current_start, target, speed, distance)
+            if distance <= EPSILON and not force_direct:
+                self._log_event(
+                    "ALL",
+                    "info",
+                    f"Zero-distance move ignored start={current_start} target={target}",
+                    "",
+                )
+                return True
+            if micro_move:
+                self._log_event(
+                    "ALL",
+                    "micro_move",
+                    f"distance={distance:.6f} start={current_start} target={target}",
+                    "",
+                )
+                if self.motion_log_enabled:
+                    self._motion_logger.info(
+                        "t=%s axis=ALL micro_move distance=%.6f start=(%.6f,%.6f,%.6f) target=(%.6f,%.6f,%.6f)",
+                        time.time(),
+                        distance,
+                        current_start[0],
+                        current_start[1],
+                        current_start[2],
+                        target[0],
+                        target[1],
+                        target[2],
+                    )
 
-        deltas = [dx, dy, dz]
-        active_axes = []
-        for idx, axis in enumerate(("x", "y", "z")):
-            delta = deltas[idx]
-            if abs(delta) > EPSILON:
+            deltas = [dx, dy, dz]
+            active_axes = []
+            for idx, axis in enumerate(("x", "y", "z")):
+                delta = deltas[idx]
+                if force_direct:
+                    if math.isclose(delta, 0.0, abs_tol=1e-9):
+                        continue
+                elif abs(delta) <= EPSILON:
+                    continue
+
                 axis_speed = adjust_axis_speed(abs(speed * delta / distance))
                 ctrl = self.controllers[axis]
                 try:
                     ctrl.motor_on()
                 except Exception:
                     pass
+                self._clear_axis_abort(axis)
                 if self.motion_log_enabled:
                     self._motion_logger.info(
                         "t=%s axis=%s target=%.3f speed=%.3f",
@@ -273,52 +344,164 @@ class ManipulatorManager(QObject):
                     assert (
                         abs(ctrl._last_speed - axis_speed) <= EPSILON
                     ), f"{axis} speed mismatch"
+                travel = abs(delta)
+                if axis_speed > 0 and math.isfinite(axis_speed):
+                    expected_move_time = travel / axis_speed
+                    wait_timeout = max(15.0, expected_move_time * 3.0)
+                else:
+                    wait_timeout = 15.0
                 self._log_event(
                     axis,
                     "move",
                     f"target={target[idx]} speed={axis_speed}",
                     "",
                 )
-                active_axes.append((axis, target[idx], axis_speed))
+                active_axes.append((axis, target[idx], axis_speed, wait_timeout))
 
-        for axis, pos, axis_speed in active_axes:
-            ctrl = self.controllers[axis]
-            try:
-                ok = ctrl.wait_until_in_position(target=pos)
-            except MotionNeverStartedError as exc:
-                # Capture diagnostic registers right away to record the
-                # controller state responsible for ignoring the move command.
-                status = ctrl._read_status()
-                err = ctrl.read_error_code()
-                msg = str(exc)
+            paused = False
+            aborted = False
+            for axis, pos, axis_speed, wait_timeout in active_axes:
+                ctrl = self.controllers[axis]
+                try:
+                    ok = ctrl.wait_until_in_position(
+                        timeout=wait_timeout,
+                        target=pos,
+                        pause_event=self._pause_event,
+                    )
+                except MotionNeverStartedError as exc:
+                    # Capture diagnostic registers right away to record the
+                    # controller state responsible for ignoring the move command.
+                    status = ctrl._read_status()
+                    err = ctrl.read_error_code()
+                    msg = str(exc)
+                    self._log_event(
+                        axis,
+                        "error",
+                        msg,
+                        f"err={err};status={status}",
+                    )
+                    self.error_occurred.emit(axis, msg)
+                    return False
+                if ok is None:
+                    paused = True
+                    break
+                if not ok:
+                    if self._consume_axis_abort(axis):
+                        self._log_event(
+                            axis,
+                            "aborted",
+                            f"target={pos} speed={axis_speed}",
+                            "",
+                        )
+                        self.status_updated.emit(f"{axis.upper()} move stopped")
+                        aborted = True
+                        break
+                    err = ctrl.read_error_code()
+                    status = ctrl._read_status()
+                    msg = (
+                        f"Failed to reach position (err={err}, status={status})"
+                    )
+                    self._log_event(
+                        axis,
+                        "error",
+                        msg,
+                        f"err={err};status={status}",
+                    )
+                    self.error_occurred.emit(axis, msg)
+                    return False
                 self._log_event(
                     axis,
-                    "error",
-                    msg,
-                    f"err={err};status={status}",
+                    "in_position",
+                    f"target={pos} speed={axis_speed}",
+                    "",
                 )
-                self.error_occurred.emit(axis, msg)
+
+            if paused:
+                self._pause_event.wait()
+                coords = []
+                for idx, axis in enumerate(("x", "y", "z")):
+                    ctrl = self.controllers.get(axis)
+                    try:
+                        coords.append(ctrl.read_position())
+                    except Exception:
+                        coords.append(current_start[idx])
+                current_start = tuple(coords)
+                continue
+
+            if aborted:
                 return False
-            if not ok:
-                err = ctrl.read_error_code()
-                status = ctrl._read_status()
-                msg = (
-                    f"Failed to reach position (err={err}, status={status})"
-                )
-                self._log_event(
-                    axis,
-                    "error",
-                    msg,
-                    f"err={err};status={status}",
-                )
-                self.error_occurred.emit(axis, msg)
-                return False
-            self._log_event(
-                axis,
-                "in_position",
-                f"target={pos} speed={axis_speed}",
-                "",
+
+            return True
+
+    def _move_axes_stop_and_go(
+        self,
+        start: Tuple[float, float, float],
+        target: Tuple[float, float, float],
+        requested_speed: float,
+        distance: float,
+    ) -> bool:
+        """Approximate very slow motion by hop-dwell cycles."""
+
+        if requested_speed <= 0.0:
+            raise ValueError("Requested speed must be positive for stop-and-go mode")
+
+        step_length = max(self.nozzle_diameter_mm * STOP_GO_STEP_FRACTION, EPSILON)
+        steps = max(1, math.ceil(distance / step_length))
+        move_speed = max(STOP_GO_HOP_SPEED, requested_speed)
+
+        dx = target[0] - start[0]
+        dy = target[1] - start[1]
+        dz = target[2] - start[2]
+
+        prev_point = start
+        travelled = 0.0
+        for step in range(1, steps + 1):
+            remaining = distance - travelled
+            segment = min(step_length, remaining)
+            travelled += segment
+            frac = travelled / distance if distance else 1.0
+            intermediate = (
+                start[0] + dx * frac,
+                start[1] + dy * frac,
+                start[2] + dz * frac,
             )
+
+            move_start = time.time()
+            move_end = move_start
+            try:
+                move_success = self._move_axes(
+                    prev_point, intermediate, move_speed, force_direct=True
+                )
+            finally:
+                move_end = time.time()
+
+            if not move_success:
+                return False
+
+            synthetic_move_time = segment / move_speed
+            actual_move_time = move_end - move_start
+            if actual_move_time <= 0:
+                actual_move_time = synthetic_move_time
+
+            total_time = segment / requested_speed
+            dwell = max(0.0, total_time - actual_move_time)
+            if dwell > 0:
+                self._log_event(
+                    "ALL",
+                    "dwell",
+                    f"segment={segment:.6f}mm dwell={dwell:.3f}s",
+                    "",
+                )
+                remaining_dwell = dwell
+                while remaining_dwell > 0:
+                    self._pause_event.wait()
+                    chunk = min(0.1, remaining_dwell)
+                    start_sleep = time.time()
+                    time.sleep(chunk)
+                    elapsed = time.time() - start_sleep
+                    remaining_dwell -= elapsed
+            prev_point = intermediate
+
         return True
 
     def move_to_point(self, target: Tuple[float, float, float], speed: float) -> None:
@@ -348,12 +531,42 @@ class ManipulatorManager(QObject):
     def pause_path(self):
         """Pause the currently executing path."""
         self._pause_event.clear()
+        self._stop_all_motion()
         self.status_updated.emit("Pattern paused")
 
     def resume_path(self):
         """Resume a paused path."""
         self._pause_event.set()
         self.status_updated.emit("Pattern resumed")
+
+    def _stop_all_motion(self) -> None:
+        """Issue an emergency stop to every connected axis."""
+
+        for axis, ctrl in self.controllers.items():
+            emergency_stop = getattr(ctrl, "emergency_stop", None)
+            if emergency_stop is None:
+                continue
+            self._mark_axis_aborted(axis)
+            try:
+                emergency_stop()
+            except Exception:
+                # Best effort – stopping is more important than reporting here
+                pass
+
+    def _mark_axis_aborted(self, axis: str) -> None:
+        with self._abort_lock:
+            self._aborted_axes.add(axis)
+
+    def _consume_axis_abort(self, axis: str) -> bool:
+        with self._abort_lock:
+            if axis in self._aborted_axes:
+                self._aborted_axes.remove(axis)
+                return True
+            return False
+
+    def _clear_axis_abort(self, axis: str) -> None:
+        with self._abort_lock:
+            self._aborted_axes.discard(axis)
 
     def execute_path(self, vertices: List[Tuple[float, float, float]], speed: float):
         """Execute a series of 3D vertices sequentially at a constant speed."""

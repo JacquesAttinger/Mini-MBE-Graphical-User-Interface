@@ -1,7 +1,10 @@
 """Main application window for the miniMBE GUI."""
 
 import os
+import time
 import datetime
+import math
+from math import hypot
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -19,7 +22,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
 )
 from PySide6.QtGui import QColor
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from widgets.axis_control import AxisControlWidget
 from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
@@ -30,7 +33,7 @@ from widgets.modbus_panel import ModbusPanel
 from services.sensor_readers import PressureReader, TemperatureReader
 from services.temperature_controller import TemperatureController
 
-from math import hypot
+from utils.speed import MIN_AXIS_SPEED
 
 # Manipulator workspace bounds in millimeters
 X_MIN_MM, X_MAX_MM = -50.0, 50.0
@@ -197,9 +200,17 @@ class MainWindow(QMainWindow):
         self._commands = []
         self.print_speed = 0.1
         self.travel_speed = 0.5
+        self._pending_pattern_duration = 0.0
         self._setup_ui()
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
+        self._pattern_timer = QTimer(self)
+        self._pattern_timer.setInterval(200)
+        self._pattern_timer.timeout.connect(self._on_pattern_timer_tick)
+        self._pattern_timer_last = None
+        self._pattern_time_total = 0.0
+        self._pattern_time_remaining = 0.0
+        self._update_pattern_timer_label()
 
     # --- helpers -------------------------------------------------------
     def _sanitize_vertices(self, verts, eps=1e-6, close_path=True):
@@ -268,14 +279,16 @@ class MainWindow(QMainWindow):
 
         ps_label = QLabel("Print speed (mm/s)")
         ps_spin = QDoubleSpinBox()
-        ps_spin.setDecimals(4)
-        ps_spin.setRange(0.0001, 2.0)
+        ps_spin.setDecimals(6)
+        ps_spin.setRange(MIN_AXIS_SPEED, 2.0)
+        ps_spin.setSingleStep(MIN_AXIS_SPEED)
         ps_spin.setValue(self.print_speed)
 
         ts_label = QLabel("Travel speed (mm/s)")
         ts_spin = QDoubleSpinBox()
-        ts_spin.setDecimals(4)
-        ts_spin.setRange(0.0001, 2.0)
+        ts_spin.setDecimals(6)
+        ts_spin.setRange(MIN_AXIS_SPEED, 2.0)
+        ts_spin.setSingleStep(MIN_AXIS_SPEED)
         ts_spin.setValue(self.travel_speed)
 
         layout.addWidget(ps_label)
@@ -370,6 +383,7 @@ class MainWindow(QMainWindow):
         self.nozzle_input.setSuffix(" µm")
         self.nozzle_input.setRange(1.0, 1000.0)
         self.nozzle_input.setValue(12.0)
+        self.nozzle_input.setSingleStep(0.5)
         right_layout.addWidget(self.nozzle_input)
 
         self.start_pattern_btn = QPushButton("Start Pattern")
@@ -382,6 +396,9 @@ class MainWindow(QMainWindow):
 
         self.progress_label = QLabel("Pattern progress: 0%")
         right_layout.addWidget(self.progress_label)
+
+        self.pattern_timer_label = QLabel("Estimated time remaining: --")
+        right_layout.addWidget(self.pattern_timer_label)
 
         # Status panel
         self.status_panel = StatusPanel()
@@ -449,6 +466,8 @@ class MainWindow(QMainWindow):
         )
         self.manager.pattern_progress.connect(self._update_pattern_progress)
         self.manager.pattern_completed.connect(self._handle_pattern_completed)
+        self.nozzle_input.valueChanged.connect(self._on_nozzle_changed)
+        self._on_nozzle_changed(self.nozzle_input.value())
 
     # ------------------------------------------------------------------
     # Slots
@@ -488,6 +507,7 @@ class MainWindow(QMainWindow):
     def _handle_error(self, axis, message):
         self.status_panel.log_message(f"{axis} ERROR: {message}")
         QMessageBox.critical(self, f"{axis} Error", message)
+        self._stop_pattern_timer(reset_label=True)
         if self.modbus_panel.auto_logging_active:
             self.modbus_panel.stop_log()
 
@@ -604,6 +624,10 @@ class MainWindow(QMainWindow):
         if hasattr(self.manager, "reset_path_state"):
             self.manager.reset_path_state()
 
+        estimated = self._estimate_pattern_duration()
+        self._pending_pattern_duration = estimated
+        self._stop_pattern_timer(reset_label=True)
+
         first = self._vertices[0]
 
         # Gather metadata about the current pattern for logging
@@ -634,6 +658,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.Yes,
             )
             if reply == QMessageBox.Yes:
+                self._initialize_pattern_timer(self._pending_pattern_duration)
+                self._pending_pattern_duration = 0.0
                 self.pause_pattern_btn.setEnabled(True)
                 try:
                     self.manager.execute_recipe(
@@ -642,11 +668,14 @@ class MainWindow(QMainWindow):
                 except Exception as exc:
                     self.start_pattern_btn.setEnabled(True)
                     self.pause_pattern_btn.setEnabled(False)
+                    self._stop_pattern_timer(reset_label=True)
                     self._handle_error("PATH", str(exc))
             else:
                 self.start_pattern_btn.setEnabled(True)
                 self.pause_pattern_btn.setEnabled(False)
                 self.status_panel.log_message("Pattern start cancelled")
+                self._stop_pattern_timer(reset_label=True)
+                self._pending_pattern_duration = 0.0
                 if self.modbus_panel.auto_logging_active:
                     self.modbus_panel.stop_log()
 
@@ -658,14 +687,19 @@ class MainWindow(QMainWindow):
             self.manager.pause_path()
             self.pause_pattern_btn.setText("Resume Pattern")
             self.status_panel.log_message("Pattern paused")
+            self._pause_pattern_timer()
         else:
             self.manager.resume_path()
             self.pause_pattern_btn.setText("Pause Pattern")
             self.status_panel.log_message("Pattern resumed")
+            self._resume_pattern_timer()
 
     def _update_pattern_progress(self, _index, pct, remaining):
+        est_remaining = remaining
+        if est_remaining <= 0.0 and self._pattern_time_total > 0.0:
+            est_remaining = max(0.0, self._pattern_time_remaining)
         self.progress_label.setText(
-            f"Pattern progress: {pct*100:.1f}% | {remaining:.1f}s remaining"
+            f"Pattern progress: {pct*100:.1f}% | {est_remaining:.1f}s remaining"
         )
 
     def _handle_pattern_completed(self):
@@ -675,8 +709,142 @@ class MainWindow(QMainWindow):
         self.start_pattern_btn.setEnabled(True)
         self.pause_pattern_btn.setEnabled(False)
         self.pause_pattern_btn.setText("Pause Pattern")
+        self._stop_pattern_timer(reset_label=False)
         if self.modbus_panel.auto_logging_active:
             self.modbus_panel.stop_log()
+
+    def _on_nozzle_changed(self, diameter_um: float):
+        """Propagate nozzle size updates to the manager."""
+
+        self.manager.set_nozzle_diameter(float(diameter_um) / 1000.0)
+
+    # ------------------------------------------------------------------
+    # Pattern time estimation & timer helpers
+    # ------------------------------------------------------------------
+    def _estimate_pattern_duration(self) -> float:
+        """Estimate total execution time for the pending pattern in seconds."""
+
+        if not self._vertices or not self._commands:
+            return 0.0
+
+        current = (
+            float(self._positions.get("x") or 0.0),
+            float(self._positions.get("y") or 0.0),
+            float(self._positions.get("z") or 0.0),
+        )
+
+        total = 0.0
+        first_vertex = self._coerce_vertex(self._vertices[0])
+        if first_vertex is not None:
+            total += self._estimate_move_time(current, first_vertex, self.travel_speed)
+            current = first_vertex
+
+        for cmd in self._commands:
+            vertices = [self._coerce_vertex(v) for v in cmd.get('vertices', [])]
+            vertices = [v for v in vertices if v is not None]
+            if not vertices:
+                continue
+            speed = self.print_speed if cmd.get('mode', 'print') == 'print' else self.travel_speed
+            if self._distance_3d(current, vertices[0]) > 1e-9:
+                total += self._estimate_move_time(current, vertices[0], speed)
+                current = vertices[0]
+            for vertex in vertices[1:]:
+                total += self._estimate_move_time(current, vertex, speed)
+                current = vertex
+
+        return total
+
+    def _coerce_vertex(self, vertex):
+        if vertex is None:
+            return None
+        try:
+            x = float(vertex[0])
+            y = float(vertex[1])
+            z = float(vertex[2]) if len(vertex) > 2 else float(self._positions.get("z") or 0.0)
+        except (TypeError, ValueError, IndexError):
+            return None
+        return (x, y, z)
+
+    @staticmethod
+    def _distance_3d(a, b):
+        dx = float(b[0]) - float(a[0])
+        dy = float(b[1]) - float(a[1])
+        dz = float(b[2]) - float(a[2])
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    def _estimate_move_time(self, start, end, speed):
+        if speed <= 0.0:
+            return 0.0
+        distance = self._distance_3d(start, end)
+        if distance <= 1e-9:
+            return 0.0
+        return distance / speed
+
+    def _initialize_pattern_timer(self, duration):
+        duration = max(0.0, float(duration or 0.0))
+        self._pattern_timer.stop()
+        self._pattern_time_total = duration
+        self._pattern_time_remaining = duration
+        if duration > 0.0:
+            self._pattern_timer_last = time.monotonic()
+            self._pattern_timer.start()
+        else:
+            self._pattern_timer_last = None
+        self._update_pattern_timer_label()
+
+    def _pause_pattern_timer(self):
+        if self._pattern_timer_last is not None:
+            elapsed = time.monotonic() - self._pattern_timer_last
+            self._pattern_time_remaining = max(0.0, self._pattern_time_remaining - elapsed)
+        self._pattern_timer.stop()
+        self._pattern_timer_last = None
+        self._update_pattern_timer_label()
+
+    def _resume_pattern_timer(self):
+        if self._pattern_time_remaining <= 0.0 or self._pattern_time_total <= 0.0:
+            return
+        self._pattern_timer_last = time.monotonic()
+        if not self._pattern_timer.isActive():
+            self._pattern_timer.start()
+
+    def _stop_pattern_timer(self, *, reset_label: bool):
+        self._pattern_timer.stop()
+        self._pattern_timer_last = None
+        self._pattern_time_remaining = 0.0
+        if reset_label:
+            self._pattern_time_total = 0.0
+        self._update_pattern_timer_label()
+
+    def _on_pattern_timer_tick(self):
+        if self._pattern_timer_last is None:
+            self._pattern_timer_last = time.monotonic()
+            return
+        now = time.monotonic()
+        elapsed = now - self._pattern_timer_last
+        self._pattern_timer_last = now
+        self._pattern_time_remaining = max(0.0, self._pattern_time_remaining - elapsed)
+        if self._pattern_time_remaining <= 0.0:
+            self._pattern_timer.stop()
+            self._pattern_timer_last = None
+        self._update_pattern_timer_label()
+
+    def _update_pattern_timer_label(self):
+        if self._pattern_time_total <= 0.0:
+            self.pattern_timer_label.setText("Estimated time remaining: --")
+            return
+        formatted = self._format_duration(self._pattern_time_remaining)
+        self.pattern_timer_label.setText(
+            f"Estimated time remaining: {formatted}"
+        )
+
+    @staticmethod
+    def _format_duration(seconds):
+        secs = max(0, int(math.ceil(seconds)))
+        minutes, sec = divmod(secs, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours:d}:{minutes:02d}:{sec:02d}"
+        return f"{minutes:d}:{sec:02d}"
 
     # ------------------------------------------------------------------
     # Qt events
