@@ -12,8 +12,6 @@ from windows.main_window import MainWindow
 sys.path.append('/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services')
 
 
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
