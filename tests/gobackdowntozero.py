@@ -31,6 +31,10 @@ ser.write(set_filament_current_command.encode())
 
 time.sleep(3)
 
+# Set filament current setpoint to 1.5A
+set_filament_current_command = f"SET Fil {target_filament_current}\r"
+ser.write(set_filament_current_command.encode())
+
 
 
 ser.close()

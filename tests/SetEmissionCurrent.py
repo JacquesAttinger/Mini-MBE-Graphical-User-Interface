@@ -12,6 +12,6 @@ ser = serial.Serial(
     timeout=1
 )
 
-ser.write(b"SET Emis 3.5 \r")
+ser.write(b"SET Emis 2.2 \r")
 
 ser.close()

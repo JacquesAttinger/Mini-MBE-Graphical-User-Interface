@@ -14,7 +14,7 @@ ser = serial.Serial(
 )
 
 # Parameters
-target_HV = 1500 # Volts
+target_HV = 2000 # Volts
 target_filament_current = 1.5 # Amperes
 # target_emission_current = 0.1 # milli_Amperes
 flux_setpoint = 200e-9 # Amperes

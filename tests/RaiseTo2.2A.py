@@ -17,7 +17,7 @@ def set_filament_current(current):
     set_filament_current_command = f"SET Fil {current}\r"
     ser.write(set_filament_current_command.encode())
 
-target_filament_current = 2.6 # Amperes
+target_filament_current = 2.4 # Amperes
 
 filament_current = 1.5
 
