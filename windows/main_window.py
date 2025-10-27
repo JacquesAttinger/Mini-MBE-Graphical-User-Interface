@@ -29,6 +29,7 @@ from widgets.position_canvas import EnhancedPositionCanvas as PositionCanvas
 from widgets.status_panel import StatusPanel
 from widgets.camera_tab import CameraTab
 from widgets.temperature_pressure_tab import TemperaturePressureTab
+from widgets.ebeam_tab import EBeamControlTab
 from widgets.modbus_panel import ModbusPanel
 from services.sensor_readers import PressureReader, TemperatureReader
 from services.temperature_controller import TemperatureController
@@ -437,6 +438,9 @@ class MainWindow(QMainWindow):
             temperature_controller=temperature_controller,
         )
         tabs.addTab(self.tp_tab, "Temp/Pressure")
+
+        self.ebeam_tab = EBeamControlTab()
+        tabs.addTab(self.ebeam_tab, "E-Beam")
 
         self.setWindowTitle("MBE Manipulator Control")
         self.resize(1200, 800)
