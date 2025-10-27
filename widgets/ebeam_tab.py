@@ -322,9 +322,9 @@ class EBeamControlTab(QWidget):
     def _format_vital_value(self, label: str, value: str) -> str:
         if label == "Emission Control":
             state = value.strip().lower()
-            if state in {"1", "on", "true"}:
+            if state in {"1", "off", "true"}:
                 return "on"
-            if state in {"0", "off", "false"}:
+            if state in {"0", "on", "false"}:
                 return "off"
             return value
         if label == "Flux":
