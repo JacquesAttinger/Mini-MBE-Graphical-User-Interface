@@ -28,29 +28,58 @@ def set_high_voltage(ser, voltage):
 
 def get_vitals(ser):
     ser.write(b"GET Emiscon\r")
-    response = ser.readline().decode().strip()
-    print(f"Emiscon Response: {response}")
-    time.sleep(1)
+    emiscon_response = ser.readline().decode().strip()
+    print(f"Emiscon Response: {emiscon_response}")
+
     ser.write(b"GET Fluxmode\r")
-    response = ser.readline().decode().strip()
-    print(f"Fluxmode Response: {response}")
-    time.sleep(1)
+    fluxmode_response = ser.readline().decode().strip()
+    print(f"Fluxmode Response: {fluxmode_response}")
+
     ser.write(b"GET Automodus\r")
-    response = ser.readline().decode().strip()
-    print(f"Automodus Response: {response}")
-    time.sleep(1)
+    automodus_response = ser.readline().decode().strip()
+    print(f"Automodus Response: {automodus_response}")
+
     ser.write(b"GET Deposition\r")
-    response = ser.readline().decode().strip()
-    print(f"Desposition Response: {response}")
-    time.sleep(1)
+    deposition_response = ser.readline().decode().strip()
+    print(f"Desposition Response: {deposition_response}")
+
     ser.write(b"GET UpSpeed\r")
-    response = ser.readline().decode().strip()
-    print(f"Upspeed Response: {response}")
-    # Get flux
-    # Get emiscon
-    # Get voltage
-    # Get filament current
-    # Get emission current
+    upspeed_response = ser.readline().decode().strip()
+    print(f"Upspeed Response: {upspeed_response}")
+
+    ser.write(b"GET Flux\r")
+    flux_response = ser.readline().decode().strip()
+    print(f"Flux Response: {flux_response}")
+
+    ser.write(b"GET Emiscon\r")
+    emiscon2_response = ser.readline().decode().strip()
+    print(f"Emiscon Response: {emiscon2_response}")
+
+    ser.write(b"GET HV\r")
+    hv_response = ser.readline().decode().strip()
+    print(f"High Voltage Response: {hv_response}")
+
+    ser.write(b"GET Fil\r")
+    fil_response = ser.readline().decode().strip()
+    print(f"Filament Current Response: {fil_response}")
+
+    ser.write(b"GET Emis\r")
+    emis_response = ser.readline().decode().strip()
+    print(f"Emission Current Response: {emis_response}")
+
+    return {
+        "emiscon_response": emiscon_response,
+        "fluxmode_response": fluxmode_response,
+        "automodus_response": automodus_response,
+        "deposition_response": deposition_response,
+        "upspeed_response": upspeed_response,
+        "flux_response": flux_response,
+        "emiscon2_response": emiscon2_response,
+        "hv_response": hv_response,
+        "fil_response": fil_response,
+        "emis_response": emis_response,
+    }
+
     
 def interlock(ser):
     ser.write(b"GET Interlock\r")
@@ -59,3 +88,7 @@ def interlock(ser):
 
 def update_displays(ser):
     ser.write(b"UPDATE DISPLAYS\r")
+
+ser = open_serial_connection()
+get_vitals(ser)
+set_high_voltage(ser, 0)
