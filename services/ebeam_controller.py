@@ -86,6 +86,11 @@ class EBeamController:
     def set_filament_current(self, current: float) -> None:
         self._send_set_command("Fil", current)
 
+    def set_emission_control(self, enabled: bool) -> None:
+        """Enable or disable emission control."""
+        state = "on" if enabled else "off"
+        self._send_set_command("Emiscon", state)
+
     # ------------------------------------------------------------------
     # Telemetry
     # ------------------------------------------------------------------
@@ -119,9 +124,12 @@ class EBeamController:
         if not self.is_connected:
             raise RuntimeError("E-beam controller is not connected")
 
-    def _send_set_command(self, parameter: str, value: float) -> None:
+    def _send_set_command(self, parameter: str, value: float | str) -> None:
         self._ensure_connection()
-        formatted = self._format_value(value)
+        if isinstance(value, str):
+            formatted = value.strip()
+        else:
+            formatted = self._format_value(value)
         command = f"SET {parameter} {formatted}"
         self._write_line(command)
 
