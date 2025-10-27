@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 import serial
+import re
 
 
 class EBeamController:
@@ -13,15 +14,14 @@ class EBeamController:
     #: Commands that return diagnostic information.
     _VITAL_COMMANDS = {
         "Emission Control": "GET Emiscon",
-        "Flux Mode": "GET Fluxmode",
-        "Auto Modus": "GET Automodus",
-        "Deposition": "GET Deposition",
         "Upspeed": "GET UpSpeed",
         "Flux": "GET Flux",
         "High Voltage": "GET HV",
         "Filament Current": "GET Fil",
         "Emission Current": "GET Emis",
     }
+
+    _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
     def __init__(
         self,
@@ -98,6 +98,20 @@ class EBeamController:
             response = self._query(command)
             vitals[label] = response
         return vitals
+
+    def get_filament_current(self) -> Optional[float]:
+        """Return the current filament reading, if it can be parsed."""
+        try:
+            response = self._query("GET Fil")
+        except Exception:  # pragma: no cover - depends on HW
+            return None
+        match = self._FLOAT_RE.search(response)
+        if not match:
+            return None
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
 
     # ------------------------------------------------------------------
     # Helpers
