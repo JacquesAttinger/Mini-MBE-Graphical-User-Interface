@@ -36,13 +36,15 @@ class EBeamControlTab(QWidget):
         self._setpoint_buttons: Dict[QDoubleSpinBox, QPushButton] = {}
         self._latest_filament_current: Optional[float] = None
         self._filament_ramp_queue: List[float] = []
+        self._filament_step_size = 0.1
+        self._filament_ramp_rate = 0.2
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.VITAL_UPDATE_MS)
         self._timer.timeout.connect(self._refresh_vitals)
 
         self._filament_ramp_timer = QTimer(self)
-        self._filament_ramp_timer.setInterval(500)
+        self._filament_ramp_timer.setInterval(self._calculate_ramp_interval_ms())
         self._filament_ramp_timer.timeout.connect(self._on_filament_ramp_timeout)
 
         self._build_ui()
@@ -100,6 +102,32 @@ class EBeamControlTab(QWidget):
             self.filament_input,
             self._apply_filament_current,
         )
+
+        self.filament_ramp_rate_input = self._create_spinbox(
+            0.01,
+            5.0,
+            single_step=0.05,
+            decimals=2,
+        )
+        self.filament_ramp_rate_input.setSuffix(" A/s")
+        self.filament_ramp_rate_input.setValue(self._filament_ramp_rate)
+        self._add_setpoint_row(
+            param_layout,
+            "Filament ramp rate",
+            self.filament_ramp_rate_input,
+            self._apply_filament_ramp_rate,
+        )
+
+        emission_control_row = QWidget()
+        emission_layout = QHBoxLayout(emission_control_row)
+        emission_layout.setContentsMargins(0, 0, 0, 0)
+        self.emission_on_button = QPushButton("Emission On")
+        self.emission_on_button.clicked.connect(lambda: self._set_emission_control(True))
+        emission_layout.addWidget(self.emission_on_button)
+        self.emission_off_button = QPushButton("Emission Off")
+        self.emission_off_button.clicked.connect(lambda: self._set_emission_control(False))
+        emission_layout.addWidget(self.emission_off_button)
+        param_layout.addRow("Emission control", emission_control_row)
 
         layout.addWidget(param_group)
 
@@ -175,6 +203,9 @@ class EBeamControlTab(QWidget):
             self._filament_ramp_queue = queue
             self._send_next_filament_step()
             if self._filament_ramp_queue:
+                self._filament_ramp_timer.setInterval(
+                    self._calculate_ramp_interval_ms()
+                )
                 self._filament_ramp_timer.start()
             else:
                 self._filament_ramp_timer.stop()
@@ -191,6 +222,28 @@ class EBeamControlTab(QWidget):
             self.status_label.setText(f"Command failed: {exc}")
             return
         self._acknowledge_input(spinbox)
+
+    def _apply_filament_ramp_rate(self) -> None:
+        value = max(self.filament_ramp_rate_input.value(), 0.01)
+        self._filament_ramp_rate = value
+        self.filament_ramp_rate_input.setValue(value)
+        self._filament_ramp_timer.setInterval(self._calculate_ramp_interval_ms())
+        if self._filament_ramp_queue and not self._filament_ramp_timer.isActive():
+            self._filament_ramp_timer.start()
+        self.status_label.setText(f"Ramp rate set to {value:.2f} A/s")
+        self._acknowledge_input(self.filament_ramp_rate_input)
+
+    def _set_emission_control(self, enabled: bool) -> None:
+        if not self._controller.is_connected:
+            self.status_label.setText("Not connected")
+            return
+        try:
+            self._controller.set_emission_control(enabled)
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self.status_label.setText(f"Command failed: {exc}")
+            return
+        state = "on" if enabled else "off"
+        self.status_label.setText(f"Emission control {state}")
 
     def _refresh_vitals(self) -> None:
         if not self._controller.is_connected:
@@ -286,7 +339,7 @@ class EBeamControlTab(QWidget):
     def _build_filament_ramp(self, start: float, target: float) -> List[float]:
         if math.isclose(start, target, abs_tol=1e-6):
             return []
-        step = 0.1 if target > start else -0.1
+        step = self._filament_step_size if target > start else -self._filament_step_size
         values: List[float] = []
         current = start
         while True:
@@ -335,11 +388,12 @@ class EBeamControlTab(QWidget):
         numeric, units = self._extract_numeric_and_units(raw)
         if numeric is None:
             return raw
-        formatted = f"{numeric:.2f}"
-        if units:
-            # Ensure there's exactly one space before the units.
-            formatted = f"{formatted} {units}" if not units.startswith(" ") else f"{formatted}{units}"
-        return formatted
+        multiplier = self._flux_units_to_amps_multiplier(units)
+        if multiplier is None:
+            return raw
+        amps = numeric * multiplier
+        nanoamps = amps * 1e9
+        return f"{nanoamps:.2f} nA"
 
     @staticmethod
     def _parse_float(raw: Optional[str]) -> Optional[float]:
@@ -375,6 +429,37 @@ class EBeamControlTab(QWidget):
             numeric = None
         units = (text[: match.start()] + text[match.end():]).strip()
         return numeric, units
+
+    def _calculate_ramp_interval_ms(self) -> int:
+        rate = max(self._filament_ramp_rate, 0.01)
+        interval = abs(self._filament_step_size / rate) * 1000.0
+        return max(50, int(round(interval)))
+
+    @staticmethod
+    def _flux_units_to_amps_multiplier(units: str) -> Optional[float]:
+        if units is None:
+            return 1.0
+        normalized = units.strip()
+        if not normalized:
+            return 1.0
+        normalized = normalized.replace("µ", "u")
+        normalized = normalized.replace("amperes", "a")
+        normalized = normalized.replace("amper", "a")
+        normalized = normalized.replace("amps", "a")
+        normalized = normalized.replace("amp", "a")
+        normalized = normalized.replace(" ", "")
+        normalized = normalized.lower()
+        if normalized in {"a"}:
+            return 1.0
+        if normalized in {"ma"}:
+            return 1e-3
+        if normalized in {"ua"}:
+            return 1e-6
+        if normalized in {"na"}:
+            return 1e-9
+        if normalized in {"pa"}:
+            return 1e-12
+        return None
 
 
 __all__ = ["EBeamControlTab"]
