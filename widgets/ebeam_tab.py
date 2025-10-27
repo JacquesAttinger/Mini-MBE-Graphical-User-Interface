@@ -226,6 +226,14 @@ class EBeamControlTab(QWidget):
             return
         self._acknowledge_input(spinbox)
 
+    def initiate_shutdown(self, *, reason: Optional[str] = None) -> None:
+        """Public helper used by interlock systems to start shutdown."""
+        if reason:
+            self.status_label.setText(reason)
+        if self._shutdown_state is not None:
+            return
+        self._start_shutdown()
+
     def _start_shutdown(self) -> None:
         if not self._controller.is_connected:
             self.status_label.setText("Not connected")

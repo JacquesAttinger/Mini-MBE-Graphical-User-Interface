@@ -472,6 +472,7 @@ class MainWindow(QMainWindow):
         self.manager.pattern_completed.connect(self._handle_pattern_completed)
         self.nozzle_input.valueChanged.connect(self._on_nozzle_changed)
         self._on_nozzle_changed(self.nozzle_input.value())
+        self.tp_tab.shutdown_requested.connect(self._handle_interlock_shutdown)
 
     # ------------------------------------------------------------------
     # Slots
@@ -507,6 +508,10 @@ class MainWindow(QMainWindow):
             self.status_panel.log_message(
                 f"{axis.upper()} position: {position:.3f} mm"
             )
+
+    def _handle_interlock_shutdown(self, message: str) -> None:
+        self.status_panel.log_message(message)
+        self.ebeam_tab.initiate_shutdown(reason=message)
 
     def _handle_error(self, axis, message):
         self.status_panel.log_message(f"{axis} ERROR: {message}")
