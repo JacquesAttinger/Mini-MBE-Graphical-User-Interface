@@ -14,7 +14,6 @@ class EBeamController:
     #: Commands that return diagnostic information.
     _VITAL_COMMANDS = {
         "Emission Control": "GET Emiscon",
-        "Upspeed": "GET UpSpeed",
         "Flux": "GET Flux",
         "High Voltage": "GET HV",
         "Filament Current": "GET Fil",
