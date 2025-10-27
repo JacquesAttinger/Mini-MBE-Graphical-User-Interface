@@ -13,7 +13,6 @@ class EBeamController:
 
     #: Commands that return diagnostic information.
     _VITAL_COMMANDS = {
-        "Emission Control": "GET Emiscon",
         "Flux": "GET Flux",
         "High Voltage": "GET HV",
         "Filament Current": "GET Fil",
@@ -85,11 +84,6 @@ class EBeamController:
 
     def set_filament_current(self, current: float) -> None:
         self._send_set_command("Fil", current)
-
-    def set_emission_control(self, enabled: bool) -> None:
-        """Enable or disable emission control."""
-        state = "on" if enabled else "off"
-        self._send_set_command("Emiscon", state)
 
     # ------------------------------------------------------------------
     # Telemetry

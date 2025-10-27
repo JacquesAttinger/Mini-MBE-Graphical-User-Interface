@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
@@ -27,6 +27,9 @@ class EBeamControlTab(QWidget):
     """Provides controls and live vitals for the e-beam evaporator."""
 
     VITAL_UPDATE_MS = 500
+    SHUTDOWN_EMISSION_TARGET = 0.1
+    SHUTDOWN_FILAMENT_TARGET = 0.1
+    SHUTDOWN_TOLERANCE = 0.01
     _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -35,9 +38,12 @@ class EBeamControlTab(QWidget):
         self._vital_labels: Dict[str, QLabel] = {}
         self._setpoint_buttons: Dict[QDoubleSpinBox, QPushButton] = {}
         self._latest_filament_current: Optional[float] = None
+        self._latest_emission_current: Optional[float] = None
         self._filament_ramp_queue: List[float] = []
         self._filament_step_size = 0.1
-        self._filament_ramp_rate = 0.2
+        self._filament_ramp_rate = 0.4
+        self._filament_ramp_complete_callback: Optional[Callable[[], None]] = None
+        self._shutdown_state: Optional[str] = None
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.VITAL_UPDATE_MS)
@@ -103,31 +109,9 @@ class EBeamControlTab(QWidget):
             self._apply_filament_current,
         )
 
-        self.filament_ramp_rate_input = self._create_spinbox(
-            0.01,
-            5.0,
-            single_step=0.05,
-            decimals=2,
-        )
-        self.filament_ramp_rate_input.setSuffix(" A/s")
-        self.filament_ramp_rate_input.setValue(self._filament_ramp_rate)
-        self._add_setpoint_row(
-            param_layout,
-            "Filament ramp rate",
-            self.filament_ramp_rate_input,
-            self._apply_filament_ramp_rate,
-        )
-
-        emission_control_row = QWidget()
-        emission_layout = QHBoxLayout(emission_control_row)
-        emission_layout.setContentsMargins(0, 0, 0, 0)
-        self.emission_on_button = QPushButton("Emission On")
-        self.emission_on_button.clicked.connect(lambda: self._set_emission_control(True))
-        emission_layout.addWidget(self.emission_on_button)
-        self.emission_off_button = QPushButton("Emission Off")
-        self.emission_off_button.clicked.connect(lambda: self._set_emission_control(False))
-        emission_layout.addWidget(self.emission_off_button)
-        param_layout.addRow("Emission control", emission_control_row)
+        self.shutdown_button = QPushButton("Shutdown")
+        self.shutdown_button.clicked.connect(self._start_shutdown)
+        param_layout.addRow(self.shutdown_button)
 
         layout.addWidget(param_group)
 
@@ -141,6 +125,7 @@ class EBeamControlTab(QWidget):
             self._vital_labels[label] = value_label
         layout.addWidget(vitals_group)
 
+        self._set_shutdown_state(None)
         layout.addStretch(1)
 
     # ------------------------------------------------------------------
@@ -150,6 +135,10 @@ class EBeamControlTab(QWidget):
         if self._controller.is_connected:
             self._controller.disconnect()
             self._timer.stop()
+            self._filament_ramp_timer.stop()
+            self._filament_ramp_queue.clear()
+            self._filament_ramp_complete_callback = None
+            self._set_shutdown_state(None)
             self._update_connection_state(False)
             return
 
@@ -180,17 +169,29 @@ class EBeamControlTab(QWidget):
         )
 
     def _apply_filament_current(self) -> None:
+        target = self.filament_input.value()
+        if self._start_filament_ramp(target):
+            self._acknowledge_input(self.filament_input)
+
+    def _start_filament_ramp(
+        self,
+        target: float,
+        *,
+        callback: Optional[Callable[[], None]] = None,
+    ) -> bool:
         if not self._controller.is_connected:
             self.status_label.setText("Not connected")
-            return
+            return False
         self._filament_ramp_timer.stop()
         self._filament_ramp_queue.clear()
-        target = self.filament_input.value()
+        self._filament_ramp_complete_callback = callback
+
         start = self._latest_filament_current
         if start is None:
             start = self._controller.get_filament_current()
         if start is None:
             start = target
+
         queue = self._build_filament_ramp(start, target)
         if not queue:
             try:
@@ -198,18 +199,20 @@ class EBeamControlTab(QWidget):
                 self.status_label.setText("Command sent")
             except Exception as exc:  # pragma: no cover - depends on HW
                 self.status_label.setText(f"Command failed: {exc}")
-                return
+                self._filament_ramp_complete_callback = None
+                return False
+            self._on_filament_ramp_complete()
+            return True
+
+        self._filament_ramp_queue = queue
+        self._send_next_filament_step()
+        if self._filament_ramp_queue:
+            self._filament_ramp_timer.setInterval(self._calculate_ramp_interval_ms())
+            self._filament_ramp_timer.start()
         else:
-            self._filament_ramp_queue = queue
-            self._send_next_filament_step()
-            if self._filament_ramp_queue:
-                self._filament_ramp_timer.setInterval(
-                    self._calculate_ramp_interval_ms()
-                )
-                self._filament_ramp_timer.start()
-            else:
-                self._filament_ramp_timer.stop()
-        self._acknowledge_input(self.filament_input)
+            self._filament_ramp_timer.stop()
+            self._on_filament_ramp_complete()
+        return True
 
     def _apply_setpoint(self, setter, spinbox: QDoubleSpinBox) -> None:
         if not self._controller.is_connected:
@@ -223,32 +226,31 @@ class EBeamControlTab(QWidget):
             return
         self._acknowledge_input(spinbox)
 
-    def _apply_filament_ramp_rate(self) -> None:
-        value = max(self.filament_ramp_rate_input.value(), 0.01)
-        self._filament_ramp_rate = value
-        self.filament_ramp_rate_input.setValue(value)
-        self._filament_ramp_timer.setInterval(self._calculate_ramp_interval_ms())
-        if self._filament_ramp_queue and not self._filament_ramp_timer.isActive():
-            self._filament_ramp_timer.start()
-        self.status_label.setText(f"Ramp rate set to {value:.2f} A/s")
-        self._acknowledge_input(self.filament_ramp_rate_input)
-
-    def _set_emission_control(self, enabled: bool) -> None:
+    def _start_shutdown(self) -> None:
         if not self._controller.is_connected:
             self.status_label.setText("Not connected")
             return
-        try:
-            self._controller.set_emission_control(enabled)
-        except Exception as exc:  # pragma: no cover - depends on HW
-            self.status_label.setText(f"Command failed: {exc}")
+        if self._shutdown_state is not None:
+            self.status_label.setText("Shutdown already in progress")
             return
-        state = "on" if enabled else "off"
-        self.status_label.setText(f"Emission control {state}")
+        try:
+            self._controller.set_emission_current(self.SHUTDOWN_EMISSION_TARGET)
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self.status_label.setText(f"Shutdown failed: {exc}")
+            return
+        self.emission_input.setValue(self.SHUTDOWN_EMISSION_TARGET)
+        self._set_shutdown_state("waiting_emission")
+        self.status_label.setText("Shutdown: waiting for emission")
+        self._maybe_advance_shutdown()
 
     def _refresh_vitals(self) -> None:
         if not self._controller.is_connected:
             for label in self._vital_labels.values():
                 label.setText("-")
+            self._latest_filament_current = None
+            self._latest_emission_current = None
+            if self._shutdown_state is not None:
+                self._finish_shutdown("Shutdown aborted: disconnected")
             return
         try:
             vitals = self._controller.get_vitals()
@@ -261,6 +263,43 @@ class EBeamControlTab(QWidget):
             label.setText(formatted)
         filament_value = vitals.get("Filament Current")
         self._latest_filament_current = self._parse_float(filament_value)
+        emission_value = vitals.get("Emission Current")
+        self._latest_emission_current = self._parse_float(emission_value)
+        self._maybe_advance_shutdown()
+
+    def _maybe_advance_shutdown(self) -> None:
+        if self._shutdown_state == "waiting_emission":
+            current = self._latest_emission_current
+            if current is None:
+                return
+            if current <= self.SHUTDOWN_EMISSION_TARGET + self.SHUTDOWN_TOLERANCE:
+                self.filament_input.setValue(self.SHUTDOWN_FILAMENT_TARGET)
+                self._set_shutdown_state("ramping_filament")
+                if not self._start_filament_ramp(
+                    self.SHUTDOWN_FILAMENT_TARGET,
+                    callback=self._on_shutdown_filament_complete,
+                ):
+                    message = self.status_label.text() or "Shutdown aborted"
+                    self._finish_shutdown(message)
+                elif self._shutdown_state == "ramping_filament":
+                    self.status_label.setText("Shutdown: ramping filament")
+
+    def _on_shutdown_filament_complete(self) -> None:
+        if self._shutdown_state != "ramping_filament":
+            return
+        try:
+            self._controller.set_high_voltage(0.0)
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self._finish_shutdown(f"Shutdown failed: {exc}")
+            return
+        self.hv_input.setValue(0.0)
+        self._finish_shutdown("Shutdown complete")
+
+    def _finish_shutdown(self, message: Optional[str] = None) -> None:
+        self._set_shutdown_state(None)
+        self._filament_ramp_complete_callback = None
+        if message:
+            self.status_label.setText(message)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -272,6 +311,12 @@ class EBeamControlTab(QWidget):
         else:
             self.status_label.setText("Disconnected")
             self.connect_btn.setText("Connect")
+            self._set_shutdown_state(None)
+
+    def _set_shutdown_state(self, state: Optional[str]) -> None:
+        self._shutdown_state = state
+        if hasattr(self, "shutdown_button"):
+            self.shutdown_button.setEnabled(state is None)
 
     @staticmethod
     def _create_spinbox(
@@ -359,6 +404,7 @@ class EBeamControlTab(QWidget):
         self._send_next_filament_step()
         if not self._filament_ramp_queue:
             self._filament_ramp_timer.stop()
+            self._on_filament_ramp_complete()
 
     def _send_next_filament_step(self) -> None:
         if not self._filament_ramp_queue:
@@ -371,15 +417,32 @@ class EBeamControlTab(QWidget):
             self.status_label.setText(f"Command failed: {exc}")
             self._filament_ramp_queue.clear()
             self._filament_ramp_timer.stop()
+            self._filament_ramp_complete_callback = None
+            if self._shutdown_state is not None:
+                self._finish_shutdown(f"Shutdown failed: {exc}")
+
+    def _on_filament_ramp_complete(self) -> None:
+        callback = self._filament_ramp_complete_callback
+        self._filament_ramp_complete_callback = None
+        if callback is not None:
+            callback()
 
     def _format_vital_value(self, label: str, value: str) -> str:
-        if label == "Emission Control":
-            state = value.strip().lower()
-            if state in {"1", "off", "true"}:
-                return "on"
-            if state in {"0", "on", "false"}:
-                return "off"
-            return value
+        if label == "High Voltage":
+            numeric = self._parse_float(value)
+            if numeric is None:
+                return value
+            return f"{numeric:.0f} V"
+        if label == "Filament Current":
+            numeric = self._parse_float(value)
+            if numeric is None:
+                return value
+            return f"{numeric:.2f} A"
+        if label == "Emission Current":
+            numeric = self._parse_float(value)
+            if numeric is None:
+                return value
+            return f"{numeric:.2f} mA"
         if label == "Flux":
             return self._format_flux(value)
         return value
