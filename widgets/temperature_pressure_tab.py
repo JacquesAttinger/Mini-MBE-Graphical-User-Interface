@@ -50,6 +50,7 @@ class TemperaturePressureTab(QWidget):
     # Signals to control acquisition
     start_requested = Signal()
     stop_requested = Signal()
+    shutdown_requested = Signal(str)
 
     def __init__(
         self,
@@ -412,6 +413,12 @@ class TemperaturePressureTab(QWidget):
             f"  Temperature (last): {self._last_temp:.2f}\n"
             f"  Time: {datetime.now().isoformat(timespec='seconds')}\n"
         )
+        alert_message = (
+            "Interlock: pressure dropped below "
+            f"{self._alert_threshold:.3f} mTorr (reading: {pressure_value:.3e} mTorr)."
+        )
+        self.shutdown_requested.emit(alert_message)
+
         threading.Thread(
             target=self._send_email_async,
             args=(subject, body),
