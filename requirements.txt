@@ -5,3 +5,4 @@ pymodbus
 PySide6
 shapely>=2.0
 vmbpy
+pyserial
