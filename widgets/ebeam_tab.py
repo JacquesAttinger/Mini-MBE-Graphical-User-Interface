@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections import deque
+from datetime import datetime
 import math
 import re
-from typing import Callable, Dict, List, Optional
+import time
+from typing import Callable, Deque, Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
@@ -15,12 +18,16 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from services.ebeam_controller import EBeamController
+from services.flux_logger import FluxLogger
 
 
 class EBeamControlTab(QWidget):
@@ -30,6 +37,9 @@ class EBeamControlTab(QWidget):
     SHUTDOWN_EMISSION_TARGET = 0.1
     SHUTDOWN_FILAMENT_TARGET = 0.1
     SHUTDOWN_TOLERANCE = 0.01
+    EMISSION_MODE_THRESHOLD = 1.0  # mA
+    FILAMENT_MODE_THRESHOLD = 0.6  # mA
+    DEFAULT_FLUX_WINDOW_SECONDS = 60.0
     _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -39,11 +49,19 @@ class EBeamControlTab(QWidget):
         self._setpoint_buttons: Dict[QDoubleSpinBox, QPushButton] = {}
         self._latest_filament_current: Optional[float] = None
         self._latest_emission_current: Optional[float] = None
+        self._latest_flux_nanoamps: Optional[float] = None
+        self._control_mode: str = "Filament Control"
+        self._control_mode_detected = False
+        self._suppressor_state: Optional[bool] = None
         self._filament_ramp_queue: List[float] = []
         self._filament_step_size = 0.1
         self._filament_ramp_rate = 0.4
         self._filament_ramp_complete_callback: Optional[Callable[[], None]] = None
         self._shutdown_state: Optional[str] = None
+        self._flux_data: Deque[Tuple[float, float]] = deque()
+        self._flux_logger = FluxLogger()
+        self._flux_logging = False
+        self._flux_window_seconds = self.DEFAULT_FLUX_WINDOW_SECONDS
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.VITAL_UPDATE_MS)
@@ -55,6 +73,10 @@ class EBeamControlTab(QWidget):
 
         self._build_ui()
         self._update_connection_state(False)
+        self._update_control_mode_ui()
+        self._update_suppressor_ui()
+        self._update_flux_plot()
+        self._update_flux_logging_ui()
         self.destroyed.connect(lambda _: self._controller.disconnect())
 
     # ------------------------------------------------------------------
@@ -73,8 +95,15 @@ class EBeamControlTab(QWidget):
         self.connect_btn.clicked.connect(self._toggle_connection)
         conn_layout.addWidget(self.connect_btn, 0, 2)
 
-        self.status_label = QLabel("Disconnected")
-        conn_layout.addWidget(self.status_label, 1, 0, 1, 3)
+        self.connection_label = QLabel("Disconnected")
+        self.connection_label.setAlignment(Qt.AlignCenter)
+        conn_layout.addWidget(self.connection_label, 1, 0)
+
+        self.message_label = QLabel("")
+        self.message_label.setWordWrap(True)
+        conn_layout.addWidget(self.message_label, 1, 1, 1, 2)
+        conn_layout.setColumnStretch(1, 1)
+        conn_layout.setColumnStretch(2, 1)
 
         layout.addWidget(conn_group)
 
@@ -109,16 +138,60 @@ class EBeamControlTab(QWidget):
             self._apply_filament_current,
         )
 
+        self.suppressor_button = QPushButton("Toggle Suppressor")
+        self.suppressor_button.clicked.connect(self._toggle_suppressor)
+        param_layout.addRow("Suppressor", self.suppressor_button)
+
         self.shutdown_button = QPushButton("Shutdown")
         self.shutdown_button.clicked.connect(self._start_shutdown)
         param_layout.addRow(self.shutdown_button)
 
         layout.addWidget(param_group)
 
+        # Flux monitor
+        flux_group = QGroupBox("Flux Monitor")
+        flux_layout = QVBoxLayout(flux_group)
+
+        flux_controls = QHBoxLayout()
+        self.flux_path_edit = QLineEdit()
+        self.flux_path_edit.setPlaceholderText("flux_log.csv")
+        flux_controls.addWidget(self.flux_path_edit)
+        self.flux_start_btn = QPushButton("Start Log")
+        self.flux_start_btn.clicked.connect(self._start_flux_log)
+        flux_controls.addWidget(self.flux_start_btn)
+        self.flux_stop_btn = QPushButton("Stop Log")
+        self.flux_stop_btn.clicked.connect(self._stop_flux_log)
+        flux_controls.addWidget(self.flux_stop_btn)
+        flux_controls.addStretch(1)
+        flux_layout.addLayout(flux_controls)
+
+        flux_window_row = QHBoxLayout()
+        flux_window_row.addWidget(QLabel("Display last:"))
+        self.flux_window_spin = QDoubleSpinBox()
+        self.flux_window_spin.setRange(1.0, 3600.0)
+        self.flux_window_spin.setValue(self._flux_window_seconds)
+        self.flux_window_spin.setSuffix(" s")
+        self.flux_window_spin.valueChanged.connect(self._on_flux_window_changed)
+        flux_window_row.addWidget(self.flux_window_spin)
+        flux_window_row.addStretch(1)
+        flux_layout.addLayout(flux_window_row)
+
+        self._flux_figure = Figure(figsize=(5, 2.5))
+        self._flux_canvas = FigureCanvas(self._flux_figure)
+        self._flux_ax = self._flux_figure.add_subplot(111)
+        self._flux_ax.set_title("Flux")
+        self._flux_ax.set_xlabel("Time (s)")
+        self._flux_ax.set_ylabel("Flux (nA)")
+        (self._flux_line,) = self._flux_ax.plot([], [], color="tab:green")
+        self._flux_figure.tight_layout(pad=2.0)
+        flux_layout.addWidget(self._flux_canvas)
+
+        layout.addWidget(flux_group)
+
         # Vitals display
         vitals_group = QGroupBox("Vitals")
         vitals_layout = QFormLayout(vitals_group)
-        for label in EBeamController.vital_labels():
+        for label in (*EBeamController.vital_labels(), "Control Mode"):
             value_label = QLabel("-")
             value_label.setObjectName(label.replace(" ", "_").lower())
             vitals_layout.addRow(label + ":", value_label)
@@ -148,7 +221,7 @@ class EBeamControlTab(QWidget):
         try:
             self._controller.connect()
         except Exception as exc:  # pragma: no cover - serial failures depend on HW
-            self.status_label.setText(f"Connection failed: {exc}")
+            self._set_status_message(f"Connection failed: {exc}")
             self._update_connection_state(False)
             return
 
@@ -163,6 +236,25 @@ class EBeamControlTab(QWidget):
         )
 
     def _apply_emission_current(self) -> None:
+        value = self.emission_input.value()
+        if value < self.FILAMENT_MODE_THRESHOLD:
+            response = QMessageBox.warning(
+                self,
+                "Confirm emission current",
+                (
+                    "Warning! Setting emission current below 0.6 mA will "
+                    "ramp down the emission current to 0 and switch to "
+                    "filament control mode. Are you sure you would like to "
+                    "proceed?"
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if response != QMessageBox.Yes:
+                if self._latest_emission_current is not None:
+                    self.emission_input.setValue(self._latest_emission_current)
+                self._set_status_message("Emission current command cancelled")
+                return
         self._apply_setpoint(
             self._controller.set_emission_current,
             self.emission_input,
@@ -180,7 +272,7 @@ class EBeamControlTab(QWidget):
         callback: Optional[Callable[[], None]] = None,
     ) -> bool:
         if not self._controller.is_connected:
-            self.status_label.setText("Not connected")
+            self._set_status_message("Not connected")
             return False
         self._filament_ramp_timer.stop()
         self._filament_ramp_queue.clear()
@@ -196,9 +288,9 @@ class EBeamControlTab(QWidget):
         if not queue:
             try:
                 self._controller.set_filament_current(target)
-                self.status_label.setText("Command sent")
+                self._set_status_message("Command sent")
             except Exception as exc:  # pragma: no cover - depends on HW
-                self.status_label.setText(f"Command failed: {exc}")
+                self._set_status_message(f"Command failed: {exc}")
                 self._filament_ramp_complete_callback = None
                 return False
             self._on_filament_ramp_complete()
@@ -216,39 +308,39 @@ class EBeamControlTab(QWidget):
 
     def _apply_setpoint(self, setter, spinbox: QDoubleSpinBox) -> None:
         if not self._controller.is_connected:
-            self.status_label.setText("Not connected")
+            self._set_status_message("Not connected")
             return
         try:
             setter(spinbox.value())
-            self.status_label.setText("Command sent")
+            self._set_status_message("Command sent")
         except Exception as exc:  # pragma: no cover - depends on HW
-            self.status_label.setText(f"Command failed: {exc}")
+            self._set_status_message(f"Command failed: {exc}")
             return
         self._acknowledge_input(spinbox)
 
     def initiate_shutdown(self, *, reason: Optional[str] = None) -> None:
         """Public helper used by interlock systems to start shutdown."""
         if reason:
-            self.status_label.setText(reason)
+            self._set_status_message(reason)
         if self._shutdown_state is not None:
             return
         self._start_shutdown()
 
     def _start_shutdown(self) -> None:
         if not self._controller.is_connected:
-            self.status_label.setText("Not connected")
+            self._set_status_message("Not connected")
             return
         if self._shutdown_state is not None:
-            self.status_label.setText("Shutdown already in progress")
+            self._set_status_message("Shutdown already in progress")
             return
         try:
             self._controller.set_emission_current(self.SHUTDOWN_EMISSION_TARGET)
         except Exception as exc:  # pragma: no cover - depends on HW
-            self.status_label.setText(f"Shutdown failed: {exc}")
+            self._set_status_message(f"Shutdown failed: {exc}")
             return
         self.emission_input.setValue(self.SHUTDOWN_EMISSION_TARGET)
         self._set_shutdown_state("waiting_emission")
-        self.status_label.setText("Shutdown: waiting for emission")
+        self._set_status_message("Shutdown: waiting for emission")
         self._maybe_advance_shutdown()
 
     def _refresh_vitals(self) -> None:
@@ -257,22 +349,74 @@ class EBeamControlTab(QWidget):
                 label.setText("-")
             self._latest_filament_current = None
             self._latest_emission_current = None
+            self._latest_flux_nanoamps = None
+            self._flux_data.clear()
+            self._control_mode_detected = False
+            self._suppressor_state = None
+            self._update_control_mode_ui()
+            self._update_suppressor_ui()
+            self._update_flux_plot()
             if self._shutdown_state is not None:
                 self._finish_shutdown("Shutdown aborted: disconnected")
             return
         try:
             vitals = self._controller.get_vitals()
         except Exception as exc:  # pragma: no cover - depends on HW
-            self.status_label.setText(f"Vitals error: {exc}")
+            self._set_status_message(f"Vitals error: {exc}")
             self._timer.stop()
             return
-        for key, label in self._vital_labels.items():
-            formatted = self._format_vital_value(key, vitals.get(key, "-"))
-            label.setText(formatted)
+        suppressor_state = self._parse_suppressor_state(vitals.get("Suppressor"))
+        self._suppressor_state = suppressor_state
+        if suppressor_state is not None:
+            vitals["Suppressor"] = "On" if suppressor_state else "Off"
+
+        flux_value = vitals.get("Flux")
+        flux_nanoamps = self._parse_flux_nanoamps(flux_value)
+        self._latest_flux_nanoamps = flux_nanoamps
+        if flux_nanoamps is not None:
+            self._record_flux_sample(flux_nanoamps)
+
         filament_value = vitals.get("Filament Current")
         self._latest_filament_current = self._parse_float(filament_value)
         emission_value = vitals.get("Emission Current")
         self._latest_emission_current = self._parse_float(emission_value)
+        previous_mode_snapshot = self._control_mode
+        previous_detected = self._control_mode_detected
+        control_mode_detected = previous_detected
+        if self._latest_emission_current is not None:
+            if previous_mode_snapshot == "Emission Control":
+                if self._latest_emission_current < self.FILAMENT_MODE_THRESHOLD:
+                    self._control_mode = "Filament Control"
+            else:
+                if self._latest_emission_current > self.EMISSION_MODE_THRESHOLD:
+                    self._control_mode = "Emission Control"
+                else:
+                    self._control_mode = "Filament Control"
+            control_mode_detected = True
+        else:
+            control_mode_detected = False
+
+        self._control_mode_detected = control_mode_detected
+        vitals["Control Mode"] = (
+            self._control_mode if control_mode_detected else "-"
+        )
+
+        for key, label in self._vital_labels.items():
+            formatted = self._format_vital_value(key, vitals.get(key, "-"))
+            label.setText(formatted)
+
+        mode_changed = (
+            control_mode_detected != previous_detected
+            or (
+                control_mode_detected
+                and self._control_mode != previous_mode_snapshot
+            )
+            or (not control_mode_detected and previous_detected)
+        )
+        if mode_changed:
+            self._update_control_mode_ui()
+        self._update_suppressor_ui()
+        self._update_flux_plot()
         self._maybe_advance_shutdown()
 
     def _maybe_advance_shutdown(self) -> None:
@@ -287,10 +431,11 @@ class EBeamControlTab(QWidget):
                     self.SHUTDOWN_FILAMENT_TARGET,
                     callback=self._on_shutdown_filament_complete,
                 ):
-                    message = self.status_label.text() or "Shutdown aborted"
+                    message = self.message_label.text() if hasattr(self, "message_label") else ""
+                    message = message or "Shutdown aborted"
                     self._finish_shutdown(message)
                 elif self._shutdown_state == "ramping_filament":
-                    self.status_label.setText("Shutdown: ramping filament")
+                    self._set_status_message("Shutdown: ramping filament")
 
     def _on_shutdown_filament_complete(self) -> None:
         if self._shutdown_state != "ramping_filament":
@@ -307,24 +452,214 @@ class EBeamControlTab(QWidget):
         self._set_shutdown_state(None)
         self._filament_ramp_complete_callback = None
         if message:
-            self.status_label.setText(message)
+            self._set_status_message(message)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     def _update_connection_state(self, connected: bool) -> None:
         if connected:
-            self.status_label.setText("Connected")
+            self.connection_label.setText("Connected")
+            self.connection_label.setStyleSheet(
+                "background-color: #5cb85c; color: white; padding: 4px 8px; border-radius: 4px;"
+            )
             self.connect_btn.setText("Disconnect")
+            if hasattr(self, "suppressor_button"):
+                self.suppressor_button.setEnabled(True)
+            self._set_status_message("Connected")
+            self._update_control_mode_ui()
         else:
-            self.status_label.setText("Disconnected")
+            self.connection_label.setText("Disconnected")
+            self.connection_label.setStyleSheet(
+                "background-color: #d9534f; color: white; padding: 4px 8px; border-radius: 4px;"
+            )
             self.connect_btn.setText("Connect")
             self._set_shutdown_state(None)
+            self._set_status_message("")
+            if hasattr(self, "suppressor_button"):
+                self.suppressor_button.setEnabled(False)
+            self._control_mode_detected = False
+            self._update_control_mode_ui()
+            self._suppressor_state = None
+        self._update_suppressor_ui()
 
     def _set_shutdown_state(self, state: Optional[str]) -> None:
         self._shutdown_state = state
         if hasattr(self, "shutdown_button"):
             self.shutdown_button.setEnabled(state is None)
+
+    def _set_status_message(self, text: str) -> None:
+        if hasattr(self, "message_label"):
+            self.message_label.setText(text)
+
+    def _set_spinbox_row_enabled(
+        self, spinbox: QDoubleSpinBox, enabled: bool
+    ) -> None:
+        spinbox.setEnabled(enabled)
+        button = self._setpoint_buttons.get(spinbox)
+        if button is not None:
+            button.setEnabled(enabled)
+
+    def _update_control_mode_ui(self) -> None:
+        label = self._vital_labels.get("Control Mode")
+        if label is not None:
+            label.setText(self._control_mode if self._control_mode_detected else "-")
+        if not hasattr(self, "emission_input") or not hasattr(self, "filament_input"):
+            return
+        if not self._controller.is_connected or not self._control_mode_detected:
+            emission_enabled = True
+            filament_enabled = True
+        elif self._control_mode == "Emission Control":
+            emission_enabled = True
+            filament_enabled = False
+        else:
+            emission_enabled = False
+            filament_enabled = True
+        self._set_spinbox_row_enabled(self.emission_input, emission_enabled)
+        self._set_spinbox_row_enabled(self.filament_input, filament_enabled)
+
+    def _toggle_suppressor(self) -> None:
+        if not self._controller.is_connected:
+            self._set_status_message("Not connected")
+            return
+        target_state = not self._suppressor_state if self._suppressor_state is not None else True
+        try:
+            self._controller.set_suppressor_state(target_state)
+            reported = self._controller.get_suppressor_state()
+            if reported is not None:
+                self._suppressor_state = reported
+            else:
+                self._suppressor_state = target_state
+            state_text = "on" if self._suppressor_state else "off"
+            self._set_status_message(f"Suppressor turned {state_text}")
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self._set_status_message(f"Suppressor command failed: {exc}")
+            return
+        self._update_suppressor_ui()
+
+    def _update_suppressor_ui(self) -> None:
+        suppressor_label = self._vital_labels.get("Suppressor")
+        if suppressor_label is not None:
+            if not self._controller.is_connected:
+                suppressor_label.setText("-")
+            elif self._suppressor_state is True:
+                suppressor_label.setText("On")
+            elif self._suppressor_state is False:
+                suppressor_label.setText("Off")
+            else:
+                suppressor_label.setText("-")
+        if not hasattr(self, "suppressor_button"):
+            return
+        if not self._controller.is_connected:
+            self.suppressor_button.setEnabled(False)
+            self.suppressor_button.setText("Toggle Suppressor")
+            return
+        self.suppressor_button.setEnabled(True)
+        if self._suppressor_state is True:
+            self.suppressor_button.setText("Turn Suppressor Off")
+        elif self._suppressor_state is False:
+            self.suppressor_button.setText("Turn Suppressor On")
+        else:
+            self.suppressor_button.setText("Toggle Suppressor")
+
+    @staticmethod
+    def _parse_suppressor_state(raw: Optional[str]) -> Optional[bool]:
+        if raw is None:
+            return None
+        text = str(raw).strip().lower()
+        if "on" in text:
+            return True
+        if "off" in text:
+            return False
+        return None
+
+    def _start_flux_log(self) -> None:
+        if self._flux_logging:
+            return
+        path = self.flux_path_edit.text().strip() or "flux_log.csv"
+        try:
+            self._flux_logger.start(path)
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self._set_status_message(f"Failed to start flux log: {exc}")
+            return
+        self._flux_logging = True
+        self._set_status_message("Flux logging started")
+        self._update_flux_logging_ui()
+
+    def _stop_flux_log(self) -> None:
+        if not self._flux_logging:
+            return
+        try:
+            self._flux_logger.stop()
+        except Exception as exc:  # pragma: no cover - depends on HW
+            self._set_status_message(f"Failed to stop flux log: {exc}")
+            self._flux_logging = False
+            self._update_flux_logging_ui()
+            return
+        self._flux_logging = False
+        self._set_status_message("Flux logging stopped")
+        self._update_flux_logging_ui()
+
+    def _update_flux_logging_ui(self) -> None:
+        if not hasattr(self, "flux_start_btn"):
+            return
+        self.flux_start_btn.setEnabled(not self._flux_logging)
+        self.flux_stop_btn.setEnabled(self._flux_logging)
+
+    def _on_flux_window_changed(self, value: float) -> None:
+        self._flux_window_seconds = max(1.0, float(value))
+        self._trim_flux_history(time.time())
+        self._update_flux_plot()
+
+    def _record_flux_sample(self, flux_nanoamps: float) -> None:
+        timestamp = time.time()
+        self._flux_data.append((timestamp, flux_nanoamps))
+        self._trim_flux_history(timestamp)
+        if self._flux_logging:
+            try:
+                self._flux_logger.append(datetime.now(), flux_nanoamps)
+            except Exception as exc:  # pragma: no cover - depends on HW
+                self._set_status_message(f"Flux log write failed: {exc}")
+                try:
+                    self._flux_logger.stop()
+                except Exception:  # pragma: no cover - depends on HW
+                    pass
+                self._flux_logging = False
+                self._update_flux_logging_ui()
+
+    def _trim_flux_history(self, current_time: Optional[float] = None) -> None:
+        if current_time is None:
+            current_time = time.time()
+        cutoff = current_time - self._flux_window_seconds
+        while self._flux_data and self._flux_data[0][0] < cutoff:
+            self._flux_data.popleft()
+
+    def _update_flux_plot(self) -> None:
+        if not hasattr(self, "_flux_line"):
+            return
+        if not self._flux_data:
+            self._flux_line.set_data([], [])
+            self._flux_ax.relim()
+            self._flux_ax.autoscale_view()
+            self._flux_canvas.draw_idle()
+            return
+        points = list(self._flux_data)
+        base = points[0][0]
+        x_values = [t - base for t, _ in points]
+        y_values = [v for _, v in points]
+        self._flux_line.set_data(x_values, y_values)
+        self._flux_ax.relim()
+        self._flux_ax.autoscale_view()
+        self._flux_canvas.draw_idle()
+
+    def _parse_flux_nanoamps(self, raw: Optional[str]) -> Optional[float]:
+        numeric, units = self._extract_numeric_and_units(raw)
+        if numeric is None:
+            return None
+        multiplier = self._flux_units_to_amps_multiplier(units)
+        if multiplier is None:
+            return None
+        return numeric * multiplier * 1e9
 
     @staticmethod
     def _create_spinbox(
@@ -383,11 +718,13 @@ class EBeamControlTab(QWidget):
             lambda sb=spinbox, btn=button: self._restore_input_state(sb, btn),
         )
 
-    @staticmethod
-    def _restore_input_state(spinbox: QDoubleSpinBox, button: Optional[QPushButton]) -> None:
+    def _restore_input_state(
+        self, spinbox: QDoubleSpinBox, button: Optional[QPushButton]
+    ) -> None:
         spinbox.setEnabled(True)
         if button is not None:
             button.setEnabled(True)
+        self._update_control_mode_ui()
 
     def _build_filament_ramp(self, start: float, target: float) -> List[float]:
         if math.isclose(start, target, abs_tol=1e-6):
@@ -420,9 +757,9 @@ class EBeamControlTab(QWidget):
         next_value = self._filament_ramp_queue.pop(0)
         try:
             self._controller.set_filament_current(next_value)
-            self.status_label.setText("Command sent")
+            self._set_status_message("Command sent")
         except Exception as exc:  # pragma: no cover - depends on HW
-            self.status_label.setText(f"Command failed: {exc}")
+            self._set_status_message(f"Command failed: {exc}")
             self._filament_ramp_queue.clear()
             self._filament_ramp_timer.stop()
             self._filament_ramp_complete_callback = None
