@@ -17,6 +17,7 @@ class EBeamController:
         "High Voltage": "GET HV",
         "Filament Current": "GET Fil",
         "Emission Current": "GET Emis",
+        "Suppressor": "GET Supr",
     }
 
     _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
@@ -85,6 +86,11 @@ class EBeamController:
     def set_filament_current(self, current: float) -> None:
         self._send_set_command("Fil", current)
 
+    def set_suppressor_state(self, enabled: bool) -> None:
+        """Enable or disable the suppressor."""
+        state = "on" if enabled else "off"
+        self._send_set_command("Supr", state)
+
     # ------------------------------------------------------------------
     # Telemetry
     # ------------------------------------------------------------------
@@ -110,6 +116,19 @@ class EBeamController:
             return float(match.group(0))
         except ValueError:
             return None
+
+    def get_suppressor_state(self) -> Optional[bool]:
+        """Return ``True`` if the suppressor is on, ``False`` if off."""
+        try:
+            response = self._query("GET Supr")
+        except Exception:  # pragma: no cover - depends on HW
+            return None
+        normalized = response.strip().lower()
+        if "on" in normalized:
+            return True
+        if "off" in normalized:
+            return False
+        return None
 
     # ------------------------------------------------------------------
     # Helpers
