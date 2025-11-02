@@ -90,5 +90,4 @@ def update_displays(ser):
     ser.write(b"UPDATE DISPLAYS\r")
 
 ser = open_serial_connection()
-get_vitals(ser)
 set_high_voltage(ser, 0)
