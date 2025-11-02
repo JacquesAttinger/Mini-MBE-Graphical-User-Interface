@@ -70,7 +70,7 @@ class TemperaturePressureTab(QWidget):
         self._pressure_reader = pressure_reader
         self._temperature_reader = temperature_reader
         self._temperature_controller = temperature_controller
-        self._logger = logger or DataLogger(r"C:\Users\yangg\OneDrive\Documents\Python_Scripts\Jacques Python\mini_MBE_GUI_Jacques\miniMBE-GUI\Pressure and Temperature logs")
+        self._logger = logger or DataLogger()
         self._logging = False
         self._acquisition_running = False
         self._last_temp = 0.0
@@ -112,7 +112,7 @@ class TemperaturePressureTab(QWidget):
         # Control row
         control = QHBoxLayout()
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("log.csv")
+        self.path_edit.setPlaceholderText("temperature_pressure_log.csv")
         self.start_btn = QPushButton("Start")
         self.start_btn.setStyleSheet("background-color: #5cb85c; color: white;")
         self.stop_btn = QPushButton("Stop")

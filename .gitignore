@@ -16,4 +16,9 @@ venv/
 
 # Data logs
 logs/
+!logs/
+!logs/flux/
+!logs/flux/.gitkeep
+!logs/temperature_pressure/
+!logs/temperature_pressure/.gitkeep
 Pressure and Temperature logs/
