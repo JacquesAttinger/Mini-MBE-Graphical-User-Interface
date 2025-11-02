@@ -40,6 +40,7 @@ class EBeamControlTab(QWidget):
     EMISSION_MODE_THRESHOLD = 1.0  # mA
     FILAMENT_MODE_THRESHOLD = 0.6  # mA
     DEFAULT_FLUX_WINDOW_SECONDS = 60.0
+    MAX_FLUX_HISTORY_SECONDS = 21600.0  # 6 hours of history retained in memory
     _FLOAT_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -62,6 +63,7 @@ class EBeamControlTab(QWidget):
         self._flux_logger = FluxLogger()
         self._flux_logging = False
         self._flux_window_seconds = self.DEFAULT_FLUX_WINDOW_SECONDS
+        self._max_flux_history_seconds = self.MAX_FLUX_HISTORY_SECONDS
 
         self._timer = QTimer(self)
         self._timer.setInterval(self.VITAL_UPDATE_MS)
@@ -168,7 +170,7 @@ class EBeamControlTab(QWidget):
         flux_window_row = QHBoxLayout()
         flux_window_row.addWidget(QLabel("Display last:"))
         self.flux_window_spin = QDoubleSpinBox()
-        self.flux_window_spin.setRange(1.0, 3600.0)
+        self.flux_window_spin.setRange(1.0, self._max_flux_history_seconds)
         self.flux_window_spin.setValue(self._flux_window_seconds)
         self.flux_window_spin.setSuffix(" s")
         self.flux_window_spin.valueChanged.connect(self._on_flux_window_changed)
@@ -607,8 +609,7 @@ class EBeamControlTab(QWidget):
         self.flux_stop_btn.setEnabled(self._flux_logging)
 
     def _on_flux_window_changed(self, value: float) -> None:
-        self._flux_window_seconds = max(1.0, float(value))
-        self._trim_flux_history(time.time())
+        self._flux_window_seconds = max(1.0, min(float(value), self._max_flux_history_seconds))
         self._update_flux_plot()
 
     def _record_flux_sample(self, flux_nanoamps: float) -> None:
@@ -630,7 +631,7 @@ class EBeamControlTab(QWidget):
     def _trim_flux_history(self, current_time: Optional[float] = None) -> None:
         if current_time is None:
             current_time = time.time()
-        cutoff = current_time - self._flux_window_seconds
+        cutoff = current_time - self._max_flux_history_seconds
         while self._flux_data and self._flux_data[0][0] < cutoff:
             self._flux_data.popleft()
 
@@ -644,9 +645,15 @@ class EBeamControlTab(QWidget):
             self._flux_canvas.draw_idle()
             return
         points = list(self._flux_data)
-        base = points[0][0]
-        x_values = [t - base for t, _ in points]
-        y_values = [v for _, v in points]
+        latest_time = points[-1][0]
+        window = min(self._flux_window_seconds, self._max_flux_history_seconds)
+        cutoff = latest_time - window
+        display_points = [p for p in points if p[0] >= cutoff]
+        if not display_points:
+            display_points = [points[-1]]
+        base = display_points[0][0]
+        x_values = [t - base for t, _ in display_points]
+        y_values = [v for _, v in display_points]
         self._flux_line.set_data(x_values, y_values)
         self._flux_ax.relim()
         self._flux_ax.autoscale_view()

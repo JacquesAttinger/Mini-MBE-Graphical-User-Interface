@@ -12,7 +12,10 @@ class FluxLogger:
     """Persist timestamped flux readings to a CSV file."""
 
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self.base_dir = Path(base_dir) if base_dir else Path.cwd()
+        if base_dir is None:
+            base_dir = Path(__file__).resolve().parents[1] / "logs" / "flux"
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
         self._fh: Optional[TextIO] = None
         self._writer: Optional[csv.writer] = None
 
@@ -48,6 +51,7 @@ class FluxLogger:
     def set_base_dir(self, base_dir: str | Path) -> None:
         """Update the base directory for relative file paths."""
         self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
 
 __all__ = ["FluxLogger"]

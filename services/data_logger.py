@@ -12,7 +12,10 @@ class DataLogger:
     """Persist pressure and temperature readings to a CSV file."""
 
     def __init__(self, base_dir: str | Path | None = None) -> None:
-        self.base_dir = Path(base_dir) if base_dir else Path.cwd()
+        if base_dir is None:
+            base_dir = Path(__file__).resolve().parents[1] / "logs" / "temperature_pressure"
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
         self._fh: Optional[TextIO] = None
         self._writer: Optional[csv.writer] = None
 
@@ -23,7 +26,6 @@ class DataLogger:
             raise RuntimeError("Logger already started")
 
         file_path = Path(path)
-        print(Path(path))
         if not file_path.is_absolute():
             file_path = self.base_dir / file_path
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,6 +59,7 @@ class DataLogger:
     def set_base_dir(self, base_dir: str | Path) -> None:
         """Update the base directory for relative file paths."""
         self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     def trim_older_than(self, max_age_seconds: float) -> None:
