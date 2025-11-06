@@ -81,7 +81,7 @@ class TemperaturePressureTab(QWidget):
         self._log_retention_secs = 0.0
 
         # Automated email sending for interlock system
-        self._alert_threshold = 5.0                  # mTorr (adjust)
+        self._alert_threshold = 5e-6                 # hPa (maximum allowable)
         self._email_cooldown_secs = 60            # number of seconds between emails get sent
         self._email_next_allowed = 0.0               # monotonic timestamp
         self._email_inflight = False                 # prevent overlap
@@ -378,11 +378,11 @@ class TemperaturePressureTab(QWidget):
 
     #     print(f'email has been sent to {receiver}')
 
-    def _maybe_alert_low_pressure(self, pressure_value: float) -> None:
-        """If pressure is below threshold, queue an email (cooldown + nonblocking)."""
+    def _maybe_alert_high_pressure(self, pressure_value: float) -> None:
+        """If pressure is above threshold, queue an email (cooldown + nonblocking)."""
         if self._service_mode:
             return
-        if pressure_value >= self._alert_threshold:
+        if pressure_value <= self._alert_threshold:
             return
 
         now = time.monotonic()
@@ -395,16 +395,17 @@ class TemperaturePressureTab(QWidget):
         self._email_inflight = True
         self._email_next_allowed = now + self._email_cooldown_secs
 
-        subject = "Mini-MBE: Low Pressure Alert"
+        subject = "Mini-MBE: High Pressure Alert"
         body = (
-            f"Low pressure detected:\n"
-            f"  Pressure: {pressure_value:.3e}\n"
+            f"High pressure detected:\n"
+            f"  Pressure: {pressure_value:.3e} hPa\n"
+            f"  Threshold: {self._alert_threshold:.3e} hPa\n"
             f"  Temperature (last): {self._last_temp:.2f}\n"
             f"  Time: {datetime.now().isoformat(timespec='seconds')}\n"
         )
         alert_message = (
-            "Interlock: pressure dropped below "
-            f"{self._alert_threshold:.3f} mTorr (reading: {pressure_value:.3e} mTorr)."
+            "Interlock: pressure exceeded "
+            f"{self._alert_threshold:.3e} hPa (reading: {pressure_value:.3e} hPa)."
         )
         self.shutdown_requested.emit(alert_message)
 
@@ -438,7 +439,7 @@ class TemperaturePressureTab(QWidget):
             self._pressure_pending = True
             self._log_latest_readings()
         # self._update_plots()
-        self._maybe_alert_low_pressure(value)
+        self._maybe_alert_high_pressure(value)
         self._update_pressure_plot()
 
     def _log_latest_readings(self) -> None:
@@ -504,16 +505,9 @@ class TemperaturePressureTab(QWidget):
 
         max_history_input = QDoubleSpinBox(dialog)
         max_history_input.setDecimals(1)
-        max_history_input.setRange(1.0, 3600.0)
+        max_history_input.setRange(1.0, 86400.0)
         max_history_input.setValue(self._max_history_seconds)
         max_history_input.setSuffix(" s")
-
-        retention_input = QDoubleSpinBox(dialog)
-        retention_input.setDecimals(1)
-        retention_input.setRange(0.0, 3600.0)
-        retention_input.setValue(self._log_retention_secs)
-        retention_input.setSuffix(" s")
-        retention_input.setSpecialValueText("Disabled")
 
         cooldown_input = QDoubleSpinBox(dialog)
         cooldown_input.setDecimals(1)
@@ -522,15 +516,14 @@ class TemperaturePressureTab(QWidget):
         cooldown_input.setSuffix(" s")
 
         pressure_input = QDoubleSpinBox(dialog)
-        pressure_input.setDecimals(3)
-        pressure_input.setRange(0.0, 1_000_000.0)
+        pressure_input.setDecimals(9)
+        pressure_input.setRange(0.0, 1.0)
         pressure_input.setValue(self._alert_threshold)
-        pressure_input.setSuffix(" mTorr")
+        pressure_input.setSuffix(" hPa")
 
         form.addRow("Max history", max_history_input)
-        form.addRow("Log retention", retention_input)
         form.addRow("Alert cooldown", cooldown_input)
-        form.addRow("Minimum pressure", pressure_input)
+        form.addRow("Maximum pressure", pressure_input)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
         buttons.accepted.connect(dialog.accept)
@@ -541,7 +534,6 @@ class TemperaturePressureTab(QWidget):
             return
 
         self._max_history_seconds = max_history_input.value()
-        self._log_retention_secs = retention_input.value()
         self._email_cooldown_secs = cooldown_input.value()
         self._alert_threshold = pressure_input.value()
 
