@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Optional, TextIO
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 
 class DataLogger:
@@ -18,34 +18,40 @@ class DataLogger:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self._fh: Optional[TextIO] = None
         self._writer: Optional[csv.writer] = None
+        self._current_date: Optional[date] = None
+        self._current_path: Optional[Path] = None
+
+        # Immediately prepare today's log file so no manual setup is required.
+        self.ensure_current_day()
 
     # ------------------------------------------------------------------
-    def start(self, path: str | Path) -> None:
-        """Open ``path`` for writing and prepare the CSV writer."""
-        if self._fh is not None:
-            raise RuntimeError("Logger already started")
+    def ensure_current_day(self) -> Path:
+        """Make sure today's CSV file is ready for logging.
 
-        file_path = Path(path)
-        if not file_path.is_absolute():
-            file_path = self.base_dir / file_path
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        Returns the path to the active log file.
+        """
 
-        self._fh = file_path.open("w+", newline="", encoding="utf-8")
-        self._writer = csv.writer(self._fh)
-        self._writer.writerow(["timestamp", "pressure", "temperature"])
-        self._fh.flush()
+        today = date.today()
+        self._ensure_writer(today)
+        assert self._current_path is not None
+        return self._current_path
 
     # ------------------------------------------------------------------
     def append(self, ts: str, pressure: float, temp: float) -> None:
         """Append a timestamp/pressure/temperature row to the CSV file."""
-        if self._writer is None:
-            raise RuntimeError("Logger not started")
-        if self._fh is None:
-            raise RuntimeError("Logger file handle missing")
+        timestamp_str = str(ts)
+        try:
+            ts_datetime = datetime.fromisoformat(timestamp_str)
+        except ValueError:
+            ts_datetime = datetime.now()
+
+        self._ensure_writer(ts_datetime.date())
+        if self._writer is None or self._fh is None:
+            raise RuntimeError("Logger not initialised")
+
         self._fh.seek(0, 2)
-        self._writer.writerow([ts, pressure, temp])
-        if self._fh:
-            self._fh.flush()
+        self._writer.writerow([timestamp_str, pressure, temp])
+        self._fh.flush()
 
     # ------------------------------------------------------------------
     def stop(self) -> None:
@@ -54,6 +60,8 @@ class DataLogger:
             self._fh.close()
             self._fh = None
             self._writer = None
+            self._current_date = None
+            self._current_path = None
 
     # ------------------------------------------------------------------
     def set_base_dir(self, base_dir: str | Path) -> None:
@@ -109,4 +117,40 @@ class DataLogger:
         self._fh.truncate()
         self._fh.flush()
         self._fh.seek(0, 2)
+
+    # ------------------------------------------------------------------
+    def _ensure_writer(self, target_date: date) -> None:
+        """Open (or reopen) the CSV writer for ``target_date``."""
+
+        if (
+            self._writer is not None
+            and self._fh is not None
+            and self._current_date == target_date
+        ):
+            return
+
+        if self._fh is not None:
+            self._fh.close()
+
+        filename = f"{target_date.isoformat()}.csv"
+        file_path = self.base_dir / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self._fh = file_path.open("a+", newline="", encoding="utf-8")
+        self._fh.seek(0, 2)
+        need_header = self._fh.tell() == 0
+        self._writer = csv.writer(self._fh)
+        if need_header:
+            self._writer.writerow(["timestamp", "pressure", "temperature"])
+            self._fh.flush()
+
+        self._current_date = target_date
+        self._current_path = file_path
+
+    # ------------------------------------------------------------------
+    @property
+    def current_file_path(self) -> Optional[Path]:
+        """Return the path of the active log file, if any."""
+
+        return self._current_path
 
