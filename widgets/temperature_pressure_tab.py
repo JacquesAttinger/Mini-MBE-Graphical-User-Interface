@@ -7,7 +7,6 @@ import sys
 sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services")
 import time
 import smtplib
-from pathlib import Path
 from typing import Deque, Optional, Tuple, List
 from datetime import datetime
 import os, smtplib, threading, time
@@ -104,6 +103,7 @@ class TemperaturePressureTab(QWidget):
             print('connected to pressure handler')
 
         self._setup_ui()
+        QTimer.singleShot(0, self._auto_start_acquisition)
 
     # ------------------------------------------------------------------
     def _setup_ui(self) -> None:
@@ -111,13 +111,10 @@ class TemperaturePressureTab(QWidget):
 
         # Control row
         control = QHBoxLayout()
-        self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("temperature_pressure_log.csv")
         self.start_btn = QPushButton("Start")
         self.start_btn.setStyleSheet("background-color: #5cb85c; color: white;")
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setStyleSheet("background-color: #d9534f; color: white;")
-        control.addWidget(self.path_edit)
         control.addWidget(self.start_btn)
         control.addWidget(self.stop_btn)
         self.service_btn = QPushButton("Service mode: off")
@@ -126,6 +123,9 @@ class TemperaturePressureTab(QWidget):
         control.addWidget(self.settings_btn)
         control.addStretch(1)
         layout.addLayout(control)
+
+        self.log_path_label = QLabel()
+        layout.addWidget(self.log_path_label)
 
         # Current value labels
         values = QHBoxLayout()
@@ -195,6 +195,8 @@ class TemperaturePressureTab(QWidget):
         # Connect checkboxes to plot updates
         self.temp_box.toggled.connect(self._update_plots)
         self.pressure_box.toggled.connect(self._update_plots)
+
+        self._update_log_path_label()
         
         
 
@@ -267,29 +269,15 @@ class TemperaturePressureTab(QWidget):
 
     # ------------------------------------------------------------------
     def _on_start(self) -> None:
-        """Validate path, start readers/logger and timer."""
+        """Start readers/logger and timer using the daily log file."""
         if self._acquisition_running:
             return
-        path = self.path_edit.text().strip()
-        try:
-            if not path:
-                raise ValueError("Empty path")
-            Path(path)  # validate
-        except Exception:
-            # highlight invalid path
-            self.path_edit.setStyleSheet("background-color: pink;")
-            return
-        self.path_edit.setStyleSheet("")
 
-        # start logger
-        try:
-            self._logger.start(path)
-            print('started loggin')
-            self._logging = True
-            self._temp_pending = False
-            self._pressure_pending = False
-        except Exception:
-            self._logging = False
+        self._logger.ensure_current_day()
+        self._update_log_path_label()
+        self._logging = True
+        self._temp_pending = False
+        self._pressure_pending = False
 
         # start readers
         print(self._pressure_reader)
@@ -317,6 +305,7 @@ class TemperaturePressureTab(QWidget):
         if self._logging:
             self._logger.stop()
             self._logging = False
+        self._update_log_path_label()
         self._temp_pending = False
         self._pressure_pending = False
         self._timer.stop()
@@ -459,10 +448,24 @@ class TemperaturePressureTab(QWidget):
 
         timestamp = datetime.now().isoformat(timespec="milliseconds")
         self._logger.append(timestamp, self._last_pressure, self._last_temp)
+        self._update_log_path_label()
         if self._log_retention_secs > 0:
             self._logger.trim_older_than(self._log_retention_secs)
         self._temp_pending = False
         self._pressure_pending = False
+
+    def _auto_start_acquisition(self) -> None:
+        """Automatically begin logging/reading once the UI is ready."""
+        if not self._acquisition_running:
+            self._on_start()
+
+    def _update_log_path_label(self) -> None:
+        """Display the current log file path to the user."""
+        path = self._logger.current_file_path
+        if path:
+            self.log_path_label.setText(f"Logging to: {path}")
+        else:
+            self.log_path_label.setText("Logging inactive")
 
     def _send_email_async(self, subject: str, body: str) -> None:
         """Runs in a background thread; never touch Qt widgets here."""
