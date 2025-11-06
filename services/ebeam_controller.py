@@ -128,6 +128,21 @@ class EBeamController:
             return True
         if "off" in normalized:
             return False
+        try:
+            value = int(normalized)
+        except ValueError:
+            match = self._FLOAT_RE.search(response)
+            if match:
+                try:
+                    value = int(float(match.group(0)))
+                except ValueError:
+                    return None
+            else:
+                return None
+        if value == 1:
+            return True
+        if value == 0:
+            return False
         return None
 
     # ------------------------------------------------------------------
