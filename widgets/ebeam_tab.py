@@ -54,6 +54,7 @@ class EBeamControlTab(QWidget):
         self._control_mode: str = "Filament Control"
         self._control_mode_detected = False
         self._suppressor_state: Optional[bool] = None
+        self._suppressor_button_cooldown = False
         self._filament_ramp_queue: List[float] = []
         self._filament_step_size = 0.1
         self._filament_ramp_rate = 0.4
@@ -239,6 +240,13 @@ class EBeamControlTab(QWidget):
 
     def _apply_emission_current(self) -> None:
         value = self.emission_input.value()
+        if value < 0.1:
+            self._set_status_message("Emission current must be at least 0.1 mA")
+            if self._latest_emission_current is not None and self._latest_emission_current >= 0.1:
+                self.emission_input.setValue(self._latest_emission_current)
+            else:
+                self.emission_input.setValue(0.1)
+            return
         if value < self.FILAMENT_MODE_THRESHOLD:
             response = QMessageBox.warning(
                 self,
@@ -466,6 +474,7 @@ class EBeamControlTab(QWidget):
                 "background-color: #5cb85c; color: white; padding: 4px 8px; border-radius: 4px;"
             )
             self.connect_btn.setText("Disconnect")
+            self._suppressor_button_cooldown = False
             if hasattr(self, "suppressor_button"):
                 self.suppressor_button.setEnabled(True)
             self._set_status_message("Connected")
@@ -478,6 +487,7 @@ class EBeamControlTab(QWidget):
             self.connect_btn.setText("Connect")
             self._set_shutdown_state(None)
             self._set_status_message("")
+            self._suppressor_button_cooldown = False
             if hasattr(self, "suppressor_button"):
                 self.suppressor_button.setEnabled(False)
             self._control_mode_detected = False
@@ -524,6 +534,7 @@ class EBeamControlTab(QWidget):
         if not self._controller.is_connected:
             self._set_status_message("Not connected")
             return
+        self._start_suppressor_button_cooldown()
         target_state = not self._suppressor_state if self._suppressor_state is not None else True
         try:
             self._controller.set_suppressor_state(target_state)
@@ -543,6 +554,7 @@ class EBeamControlTab(QWidget):
         suppressor_label = self._vital_labels.get("Suppressor")
         if suppressor_label is not None:
             if not self._controller.is_connected:
+                self._suppressor_button_cooldown = False
                 suppressor_label.setText("-")
             elif self._suppressor_state is True:
                 suppressor_label.setText("On")
@@ -556,13 +568,25 @@ class EBeamControlTab(QWidget):
             self.suppressor_button.setEnabled(False)
             self.suppressor_button.setText("Toggle Suppressor")
             return
-        self.suppressor_button.setEnabled(True)
+        self.suppressor_button.setEnabled(not self._suppressor_button_cooldown)
         if self._suppressor_state is True:
             self.suppressor_button.setText("Turn Suppressor Off")
         elif self._suppressor_state is False:
             self.suppressor_button.setText("Turn Suppressor On")
         else:
             self.suppressor_button.setText("Toggle Suppressor")
+
+    def _start_suppressor_button_cooldown(self) -> None:
+        if self._suppressor_button_cooldown:
+            return
+        self._suppressor_button_cooldown = True
+        if hasattr(self, "suppressor_button"):
+            self.suppressor_button.setEnabled(False)
+        QTimer.singleShot(1000, self._end_suppressor_button_cooldown)
+
+    def _end_suppressor_button_cooldown(self) -> None:
+        self._suppressor_button_cooldown = False
+        self._update_suppressor_ui()
 
     @staticmethod
     def _parse_suppressor_state(raw: Optional[str]) -> Optional[bool]:
@@ -572,6 +596,17 @@ class EBeamControlTab(QWidget):
         if "on" in text:
             return True
         if "off" in text:
+            return False
+        match = EBeamControlTab._FLOAT_RE.search(text)
+        if not match:
+            return None
+        try:
+            numeric = float(match.group(0))
+        except ValueError:
+            return None
+        if numeric == 1:
+            return True
+        if numeric == 0:
             return False
         return None
 
