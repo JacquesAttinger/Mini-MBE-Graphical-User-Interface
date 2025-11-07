@@ -206,12 +206,15 @@ class MainWindow(QMainWindow):
         self._update_initial_connection_status(initial_status)
         self._connect_signals()
         self._pattern_timer = QTimer(self)
-        self._pattern_timer.setInterval(200)
+        self._pattern_timer.setInterval(100)
         self._pattern_timer.timeout.connect(self._on_pattern_timer_tick)
         self._pattern_timer_last = None
         self._pattern_time_total = 0.0
         self._pattern_time_remaining = 0.0
+        self._pattern_progress_pct = 0.0
+        self._pattern_progress_remaining = 0.0
         self._update_pattern_timer_label()
+        self._refresh_progress_label()
 
     # --- helpers -------------------------------------------------------
     def _sanitize_vertices(self, verts, eps=1e-6, close_path=True):
@@ -395,7 +398,7 @@ class MainWindow(QMainWindow):
         self.pause_pattern_btn.setEnabled(False)
         right_layout.addWidget(self.pause_pattern_btn)
 
-        self.progress_label = QLabel("Pattern progress: 0%")
+        self.progress_label = QLabel("Pattern progress: 0% | 0.0s remaining")
         right_layout.addWidget(self.progress_label)
 
         self.pattern_timer_label = QLabel("Estimated time remaining: --")
@@ -704,15 +707,15 @@ class MainWindow(QMainWindow):
             self._resume_pattern_timer()
 
     def _update_pattern_progress(self, _index, pct, remaining):
-        est_remaining = remaining
-        if est_remaining <= 0.0 and self._pattern_time_total > 0.0:
-            est_remaining = max(0.0, self._pattern_time_remaining)
-        self.progress_label.setText(
-            f"Pattern progress: {pct*100:.1f}% | {est_remaining:.1f}s remaining"
-        )
+        est_remaining = float(remaining)
+        self._pattern_progress_pct = max(0.0, min(1.0, float(pct)))
+        self._pattern_progress_remaining = max(0.0, est_remaining)
+        self._refresh_progress_label()
 
     def _handle_pattern_completed(self):
-        self.progress_label.setText("Pattern progress: 100% | 0.0s remaining")
+        self._pattern_progress_pct = 1.0
+        self._pattern_progress_remaining = 0.0
+        self._refresh_progress_label()
 
         self.status_panel.log_message("Pattern completed")
         self.start_pattern_btn.setEnabled(True)
@@ -800,6 +803,7 @@ class MainWindow(QMainWindow):
         else:
             self._pattern_timer_last = None
         self._update_pattern_timer_label()
+        self._refresh_progress_label()
 
     def _pause_pattern_timer(self):
         if self._pattern_timer_last is not None:
@@ -808,6 +812,7 @@ class MainWindow(QMainWindow):
         self._pattern_timer.stop()
         self._pattern_timer_last = None
         self._update_pattern_timer_label()
+        self._refresh_progress_label()
 
     def _resume_pattern_timer(self):
         if self._pattern_time_remaining <= 0.0 or self._pattern_time_total <= 0.0:
@@ -822,11 +827,15 @@ class MainWindow(QMainWindow):
         self._pattern_time_remaining = 0.0
         if reset_label:
             self._pattern_time_total = 0.0
+            self._pattern_progress_pct = 0.0
+            self._pattern_progress_remaining = 0.0
         self._update_pattern_timer_label()
+        self._refresh_progress_label()
 
     def _on_pattern_timer_tick(self):
         if self._pattern_timer_last is None:
             self._pattern_timer_last = time.monotonic()
+            self._refresh_progress_label()
             return
         now = time.monotonic()
         elapsed = now - self._pattern_timer_last
@@ -836,6 +845,7 @@ class MainWindow(QMainWindow):
             self._pattern_timer.stop()
             self._pattern_timer_last = None
         self._update_pattern_timer_label()
+        self._refresh_progress_label()
 
     def _update_pattern_timer_label(self):
         if self._pattern_time_total <= 0.0:
@@ -845,6 +855,26 @@ class MainWindow(QMainWindow):
         self.pattern_timer_label.setText(
             f"Estimated time remaining: {formatted}"
         )
+
+    def _refresh_progress_label(self):
+        if self._pattern_time_total > 0.0:
+            estimated_pct = 1.0 - (self._pattern_time_remaining / self._pattern_time_total)
+        else:
+            estimated_pct = 0.0
+        estimated_pct = max(0.0, min(1.0, estimated_pct))
+        pct = max(self._pattern_progress_pct, estimated_pct)
+        if pct >= 1.0:
+            est_remaining = 0.0
+        else:
+            est_remaining = self._pattern_progress_remaining
+            if est_remaining <= 0.0 and self._pattern_time_total > 0.0:
+                est_remaining = max(0.0, self._pattern_time_remaining)
+        if pct > 0.0 or self._pattern_time_total > 0.0:
+            self.progress_label.setText(
+                f"Pattern progress: {pct*100:.1f}% | {est_remaining:.1f}s remaining"
+            )
+        else:
+            self.progress_label.setText("Pattern progress: 0% | 0.0s remaining")
 
     @staticmethod
     def _format_duration(seconds):
