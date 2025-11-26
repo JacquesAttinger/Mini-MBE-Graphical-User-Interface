@@ -10,6 +10,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Email credentials - DO NOT COMMIT
+email_credentials.py
+
 # Virtual environments
 .venv/
 venv/
