@@ -1,271 +1,253 @@
-# miniMBE GUI
+<!-- Last edited: 2026-10-03 13:45 CDT -->
+<a id="readme-top"></a>
 
-A comprehensive graphical interface for controlling and monitoring a Molecular Beam Epitaxy (MBE) system, featuring real-time data logging, e-beam source control, and automated alert systems.
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![License][license-shield]][license-url]
 
-## Features
+<br />
+<div align="center">
+  <h3 align="center">miniMBE GUI</h3>
 
-### 🌡️ Temperature and Pressure Monitoring
-The **Temperature/Pressure** tab provides real-time monitoring and logging capabilities:
-- **Live Data Display**: Monitor up to 8 temperature channels and 2 pressure gauges simultaneously
-- **Data Logging**: Automatically saves timestamped readings to CSV files for analysis
-- **Automated Alerts**: Configure low-pressure alerts via email to prevent system failures
-- **Visualization**: Plot and analyze historical temperature and pressure trends
-- **Configurable Sampling**: Adjust data collection intervals to match your experimental needs
+  <p align="center">
+    A desktop app to run a Mini-MBE (molecular beam epitaxy) system from one window.
+    <br />
+    Move the sample stage, draw patterns from DXF files, and watch pressure, temperature, flux and camera feeds.
+    <br />
+    <br />
+    <a href="https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/issues/new">Report a Bug or Request a Feature</a>
+  </p>
+</div>
 
-### ⚡ E-Beam Source Control
-The **E-Beam** tab offers precise control over electron beam evaporation sources:
-- **Multi-Source Support**: Control multiple e-beam sources independently
-- **Real-Time Flux Monitoring**: Track deposition rates with integrated flux sensor readings
-- **Data Logging**: Record flux measurements with timestamps for process documentation
-- **Safety Features**: Built-in monitoring to ensure safe operation
-- **Calibration Support**: Easy configuration for different evaporant materials
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#email-alerts">Email alerts</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#project-structure">Project Structure</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
 
-### 🎯 3-Axis Manipulator Control
-The **Main** tab provides comprehensive control over the XYZ manipulator system:
-- **Individual Axis Control**: Independent control widgets for X, Y, and Z axes
-- **Real-Time Position Tracking**: Live position updates displayed on visual canvas and status panel
-- **Manual Positioning**: Move axes to specific coordinates at configurable speeds
-- **Emergency Stop**: Immediate halt functionality for each axis
-- **Homing Operations**: Automated homing sequences for axis calibration
-- **Connection Monitoring**: Real-time Modbus connection status for each stepper motor
-- **Workspace Visualization**: 2D canvas showing current manipulator position and loaded patterns
+## About The Project
 
-### 📐 DXF Pattern Execution
-Advanced pattern execution system for automated deposition:
-- **DXF File Import**: Load complex deposition patterns from CAD-generated DXF files
-- **Coordinate Validation**: Automatic workspace bounds checking to prevent out-of-range movements
-- **Path Optimization**: Smart filtering to remove duplicate points and unnecessary backtracks
-- **Jump Detection**: Warning system for large movements that might indicate design errors  
-- **Dual Speed Control**: Separate configurable speeds for printing (deposition) vs. travel movements
-- **Path Visualization**: Real-time display of loaded patterns on the position canvas
-- **Progress Monitoring**: Live progress tracking with time estimates and completion predictions
-- **Pause/Resume**: Ability to pause and resume pattern execution
-- **Nozzle Compensation**: Configurable nozzle diameter for precise deposition control
-- **Stop-and-Go Mode**: Automated hop-dwell motion for ultra-slow deposition speeds
-- **Recipe System**: Command-based execution supporting both print and travel movements
+![miniMBE GUI, Main tab][screenshot-main]
 
-### 📸 Camera Integration
-Real-time visual monitoring of the MBE chamber:
-- **Live Video Feed**: Continuous camera stream for process observation
-- **Exposure Control**: Adjustable exposure settings via slider interface
-- **Gain Control**: Real-time gain adjustment for optimal image quality
-- **Camera Service**: Background thread handling for non-blocking operation
-- **Error Handling**: Automatic error reporting and recovery
+The miniMBE GUI controls the Mini-MBE system of the Yang Research Group at the University of Chicago.
+It replaces the vendor's LabVIEW interface with one Python app.
+The app also adds logging, alerts and pattern drawing that the vendor tool does not have.
+The screenshots show the app with no hardware connected.
 
-### 🔧 Modbus Debugging & Logging
-Advanced debugging tools for system development and troubleshooting:
-- **Modbus Traffic Logging**: Capture all Modbus communications for debugging
-- **Event Timestamping**: Precise timestamps on all controller events
-- **Automatic Logging**: Option to auto-start logging when patterns begin
-- **Pattern Metadata**: Logs include DXF filename, vertex count, and bounding box information
-- **Multi-Axis Coordination**: Monitors communication across all three stepper motor controllers
+Main features:
 
-### 🏗️ System Architecture
-The application follows a modular design with clear separation of concerns:
-- **Controllers**: Low-level hardware communication (SMCD14 stepper motor controllers)
-- **Services**: Business logic for cameras, sensors, data logging, and DXF parsing
-- **Widgets**: Reusable UI components for each control panel and tab
-- **Windows**: Top-level application window coordinating all subsystems
-- **Utils**: Shared utilities for DXF parsing, speed calculations, and coordinate transformations
+* **Manipulator control.**
+  Move the X, Y and Z axes, home them, stop them, and see the position on a live 2D canvas.
+  The axes use three [SMCD14](SMCD14_manual%20[EN].pdf) stepper controllers over Modbus TCP.
+* **DXF pattern execution.**
+  Load a CAD drawing, check it in a coordinate checker (bounds, large jumps, speeds), then run it.
+  You can set separate print and travel speeds, pause and resume, and see progress and time left.
+  A stop-and-go mode supports very slow deposition speeds.
+* **Temperature and pressure.**
+  Read up to 8 temperature channels and 2 pressure gauges, log them to CSV, and plot them.
+  The app can send an email when the pressure goes above a limit.
+* **E-beam source.**
+  Set high voltage, emission current and filament current.
+  Watch the flux and log it to CSV.
+* **Camera.**
+  Live video of the chamber with exposure and gain sliders.
+* **Modbus log.**
+  Record every Modbus message with timestamps to help debug the hardware.
 
-## Hardware Requirements
+![miniMBE GUI, E-Beam tab][screenshot-ebeam]
 
-This GUI interfaces with the following hardware components:
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Required
-- **SMCD14 Stepper Motor Controllers** (x3): One for each manipulator axis (X, Y, Z)
-  - Communication: Modbus TCP (default: `192.168.0.100:502`)
-  - Slave IDs: X=1, Y=2, Z=3
-  - See `SMCD14_manual [EN].pdf` for controller documentation
+### Built With
 
-### Optional
-- **Pfeiffer Vacuum Gauge**: For chamber pressure monitoring
-  - Communication: RS-232 serial (default: `COM4` at 9600 baud)
-  - Supports Pfeiffer vacuum protocol
-- **Temperature Controller/Reader**: For multi-channel temperature monitoring
-  - Communication: TCP/IP (default: `192.168.111.222`)
-  - Supports up to 8 temperature channels
-- **Camera** (e.g., Basler or similar): For live chamber monitoring
-  - Must be compatible with the camera service implementation
-- **E-Beam Flux Sensor**: For deposition rate monitoring
-  - Serial communication for real-time flux readings
+* [![Python][Python-badge]][Python-url]
+* [![Qt][Qt-badge]][Qt-url]
+* [![NumPy][NumPy-badge]][NumPy-url]
+* [![Matplotlib][Matplotlib-badge]][Matplotlib-url]
+* [ezdxf](https://github.com/mozman/ezdxf) for DXF files
+* [Shapely](https://github.com/shapely/shapely) for geometry
+* [pymodbus](https://github.com/pymodbus-dev/pymodbus) for the motor controllers
+* [pyserial](https://github.com/pyserial/pyserial) for the vacuum gauge and e-beam supply
+* [VmbPy](https://github.com/alliedvision/VmbPy) for Allied Vision cameras
 
-## Development setup
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-1. Create and activate a virtual environment:
+## Getting Started
+
+### Prerequisites
+
+* Python 3.11 (the repo pins 3.11.3 in `.python-version`).
+* The hardware you want to use.
+  The app starts without hardware, but the related panels show "Disconnected".
+
+| Device | How it connects | Default setting |
+| --- | --- | --- |
+| 3 × SMCD14 stepper controllers (X, Y, Z) | Modbus TCP | host `169.254.151.255`, port 502, slave IDs 1, 2, 3 (`controllers/manipulator_manager.py`) |
+| Temperature reader | TCP/IP | `192.168.111.222` (`services/temperature_controller.py`) |
+| Pfeiffer vacuum gauge | Serial (RS-232) | `COM4`, 9600 baud |
+| E-beam power supply and flux sensor | Serial | `COM5` (`services/ebeam_controller.py`) |
+| Allied Vision camera | VmbPy | needs the [Vimba X SDK](https://www.alliedvision.com/en/products/software/vimba-x-sdk/) |
+
+Change the defaults in the files named above to match your setup.
+
+### Installation
+
+1. Clone the repo.
+   ```sh
+   git clone https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface.git
+   cd Mini-MBE-Graphical-User-Interface
    ```
+2. Create a virtual environment and install the packages.
+   ```sh
    python -m venv .venv && source .venv/bin/activate
-   ```
-2. Install dependencies:
-   ```
    pip install -r requirements.txt
    ```
-3. Install development dependencies to run tests:
+3. Create the email credentials file (see [Email alerts](#email-alerts)).
+   The temperature tab imports it, so the app needs this file to start.
+   ```sh
+   cp email_credentials.py.template email_credentials.py
    ```
-   pip install -r requirements-dev.txt
-   ```
-4. Run the application:
-   ```
+4. Start the app.
+   ```sh
    python app.py
    ```
 
-## Running tests
+To run the tests, install the development packages and run `pytest`:
 
-After installing the development dependencies, run the test suite with:
-
-```
+```sh
+pip install -r requirements-dev.txt
 pytest
 ```
 
-## Email Alert Configuration
+### Email alerts
 
-The **Temperature/Pressure** tab can send automated low-pressure alerts via email to help prevent system failures. To enable this feature:
+The Temp/Pressure tab can email you when the pressure goes above a limit.
+It sends mail through Gmail with an app password.
 
-### Setup Instructions
-
-1. **Create your credentials file:**
-   ```bash
-   cp email_credentials.py.template email_credentials.py
-   ```
-
-2. **Generate a Gmail App Password:**
-   - Go to [Google Account App Passwords](https://myaccount.google.com/apppasswords)
-   - Sign in to your Google account
-   - Select "Mail" as the app and your device type
-   - Click "Generate" and copy the 16-character password
-
-3. **Edit `email_credentials.py`:**
+1. Create an app password at [Google App Passwords](https://myaccount.google.com/apppasswords).
+2. Fill in `email_credentials.py`:
    ```python
+   ALERT_SENDER = "your-sender@gmail.com"
    ALERT_RECEIVER = "your-email@gmail.com"
    GMAIL_APP_PASSWORD = "your-16-char-app-password"
    ```
+3. Never commit this file.
+   It is in `.gitignore`.
 
-4. **Save the file** - it's already in `.gitignore` and won't be committed to version control
+If you do not want alerts, leave the placeholder values.
+The app still runs, and the email step fails quietly.
 
-### Security Notes
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-- ✅ `email_credentials.py` is excluded from Git via `.gitignore`
-- ✅ Never commit actual credentials to the repository
-- ✅ Use Gmail App Passwords (not your regular Gmail password)
-- ✅ The template file (`email_credentials.py.template`) is safe to share
-- ⚠️ If you change computers, you'll need to set up the credentials file again
+## Usage
 
-### How Alerts Work
+A typical run looks like this:
 
-Once configured, the system will automatically send email notifications when:
-- Chamber pressure exceeds safe thresholds
-- Pressure readings indicate potential vacuum failures
-- System requires immediate attention
+1. **Start up.**
+   Run `python app.py`.
+   Check that the three axes show as connected on the Main tab.
+   Open the Camera and Temp/Pressure tabs to check the chamber.
+2. **Prepare.**
+   Start the temperature and pressure log.
+   Set the e-beam source and start the flux log.
+   Move the sample to the start position on the Main tab.
+3. **Load a pattern.**
+   Click **Load DXF** and pick a file.
+   Enter the origin where the pattern goes.
+   Read the coordinate checker: vertex count, bounding box, and large jumps (shown in orange).
+   Set the print speed and the travel speed, then accept.
+4. **Run it.**
+   Click **Start Pattern** and confirm the prompt.
+   Watch the progress, time left and position.
+   Click **Pause Pattern** to stop and later resume from the same point.
+5. **Finish.**
+   The app stops logging when the pattern ends.
+   Find the logs in `logs/`: temperature and pressure CSV files, flux CSV files, and Modbus logs if you enabled them.
+6. **Emergency.**
+   Use the **Stop** button on an axis to stop it.
+   Close the confirm dialog to abort before a pattern starts.
 
-You can configure alert thresholds and monitoring intervals directly from the Temperature/Pressure tab in the GUI.
+To log every motion command for debugging, start the app with:
 
-## Typical Workflow
-
-Here's how to use the system for a typical deposition experiment:
-
-### 1. **System Startup**
-   - Launch the application: `python app.py`
-   - Verify all three manipulator axes show "Connected" status in the status panel
-   - Check the **Camera** tab to ensure live feed is working
-   - Open the **Temp/Pressure** tab to monitor chamber conditions
-
-### 2. **Pre-Deposition Setup**
-   - **Temperature Monitoring**: Start logging temperature and pressure data
-   - **E-Beam Configuration**: Set up source parameters and begin flux monitoring
-   - **Email Alerts**: Ensure low-pressure alerts are configured (see Email Alert Configuration above)
-   - **Position Manipulator**: Use the Main tab to manually position the substrate at the starting location
-
-### 3. **Load Deposition Pattern**
-   - Click **Load DXF** in the Main tab
-   - Select your DXF file (generated from CAD software)
-   - Specify the origin coordinates where the pattern should be placed
-   - Review the **Coordinate Checker** dialog:
-     - Verify vertex count and bounding box
-     - Check for any large jumps (highlighted in orange)
-     - Inspect velocity calculations
-   - Set print speed (deposition) and travel speed when prompted
-   - Accept or cancel based on the review
-
-### 4. **Execute Pattern**
-   - Click **Start Pattern** (enabled after successful DXF load)
-   - Wait while the manipulator moves to the starting position
-   - Confirm "Ready to begin printing?" dialog
-   - Monitor progress:
-     - Progress bar shows completion percentage
-     - Time remaining updates in real-time
-     - Position canvas displays current location
-   - Use **Pause Pattern** if needed (resumes from the same point)
-
-### 5. **During Deposition**
-   - **Temperature/Pressure Tab**: Monitor chamber conditions continuously
-   - **E-Beam Tab**: Track flux measurements and adjust if needed
-   - **Camera Tab**: Observe the deposition process visually
-   - **Modbus Panel**: View real-time communication logs (for debugging)
-
-### 6. **Post-Deposition**
-   - Pattern completion triggers automatic logging stop
-   - Review logged data in `logs/` directory:
-     - Temperature/pressure CSV files
-     - Flux measurement CSV files
-     - Modbus communication logs (if enabled)
-   - Use **Temp/Pressure** tab to plot data for analysis
-
-### 7. **Emergency Procedures**
-   - **Individual Axis Stop**: Click axis-specific stop button
-   - **Pattern Abort**: Close the confirmation dialog or use Emergency Stop
-   - **Pressure Alert**: System automatically emails if chamber pressure exceeds threshold
-   - All safety shutdowns are logged for post-incident analysis
-
-## Command Line Options
-
-```bash
-# Enable detailed motion logging for debugging
+```sh
 python app.py --motion-log
 ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Project Structure
 
 ```
-miniMBE-GUI/
-├── app.py                      # Application entry point
-├── controllers/                # Hardware communication layer
-│   ├── manipulator_manager.py  # Coordinates all 3 axes
-│   └── smcd14_controller.py    # SMCD14 stepper motor driver
-├── services/                   # Business logic and hardware interfaces
-│   ├── camera_service.py       # Camera capture and streaming
-│   ├── sensor_readers.py       # Pressure and temperature sensors
-│   ├── ebeam_controller.py     # E-beam source control
-│   ├── data_logger.py          # CSV logging for temp/pressure
-│   ├── flux_logger.py          # CSV logging for flux data
-│   └── dxf_service.py          # DXF file parsing
-├── widgets/                    # UI components
-│   ├── temperature_pressure_tab.py
-│   ├── ebeam_tab.py
-│   ├── camera_tab.py
-│   ├── axis_control.py         # Individual axis control widget
-│   ├── position_canvas.py      # 2D visualization canvas
-│   └── modbus_panel.py         # Debugging panel
-├── windows/
-│   └── main_window.py          # Main application window
-├── utils/                      # Shared utilities
-│   └── dxf_parser.py           # DXF to recipe conversion
-└── tests/                      # Unit and integration tests
+├── app.py                  # Entry point
+├── controllers/            # Hardware control (SMCD14 motors, multi-axis manager)
+├── services/               # Camera, sensors, e-beam, data loggers, DXF loading
+├── widgets/                # UI panels for each tab
+├── windows/                # Main window
+├── utils/                  # DXF parsing, speed and Modbus helpers
+├── SMCD14_LV2020/          # Vendor LabVIEW project for the SMCD14 (reference)
+└── tests/                  # Tests and hardware test scripts
 ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributing
 
-This is a research project developed for the Yang Research Group at the University of Chicago. If you're using or modifying this code for your own MBE system:
+Bug reports and ideas are welcome.
+Please [open an issue](https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/issues/new) and describe what you saw or what you need.
+This project does not take pull requests at this time.
 
-1. Fork the repository
-2. Create a feature branch
-3. Run the test suite: `pytest`
-4. Submit a pull request with a clear description of changes
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## License
 
-*[Add license information here]*
+Distributed under the MIT License.
+See [`LICENSE`](LICENSE) for details.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Acknowledgments
 
-Developed at the University of Chicago for the Yang Research Group's Mini-MBE system.
+* The Yang Research Group at the University of Chicago, for the Mini-MBE system this app controls.
+* The SMCD14 LabVIEW project and manual from the controller vendor.
+* [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+[forks-shield]: https://img.shields.io/github/forks/JacquesAttinger/Mini-MBE-Graphical-User-Interface.svg?style=for-the-badge
+[forks-url]: https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/network/members
+[stars-shield]: https://img.shields.io/github/stars/JacquesAttinger/Mini-MBE-Graphical-User-Interface.svg?style=for-the-badge
+[stars-url]: https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/stargazers
+[issues-shield]: https://img.shields.io/github/issues/JacquesAttinger/Mini-MBE-Graphical-User-Interface.svg?style=for-the-badge
+[issues-url]: https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/issues
+[license-shield]: https://img.shields.io/github/license/JacquesAttinger/Mini-MBE-Graphical-User-Interface.svg?style=for-the-badge
+[license-url]: https://github.com/JacquesAttinger/Mini-MBE-Graphical-User-Interface/blob/main/LICENSE
+[screenshot-main]: images/screenshot-main.png
+[screenshot-ebeam]: images/screenshot-ebeam.png
+[Python-badge]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
+[Qt-badge]: https://img.shields.io/badge/Qt%20for%20Python-41CD52?style=for-the-badge&logo=qt&logoColor=white
+[Qt-url]: https://doc.qt.io/qtforpython-6/
+[NumPy-badge]: https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white
+[NumPy-url]: https://numpy.org/
+[Matplotlib-badge]: https://img.shields.io/badge/Matplotlib-11557c?style=for-the-badge
+[Matplotlib-url]: https://matplotlib.org/
