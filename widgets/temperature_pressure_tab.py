@@ -1,10 +1,9 @@
+# Last edited: 2026-10-03 13:35 CDT
 """Widget providing live temperature and pressure readouts."""
 
 from __future__ import annotations
 
 from collections import deque
-import sys
-sys.path.append("/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services")
 import time
 import smtplib
 from typing import Deque, Optional, Tuple, List
@@ -30,7 +29,7 @@ from PySide6.QtWidgets import (
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from email_credentials import ALERT_RECEIVER, GMAIL_APP_PASSWORD
+from email_credentials import ALERT_RECEIVER, ALERT_SENDER, GMAIL_APP_PASSWORD
 from services.data_logger import DataLogger
 from services.sensor_readers import PressureReader, TemperatureReader
 from services.temperature_controller import TemperatureController
@@ -85,7 +84,7 @@ class TemperaturePressureTab(QWidget):
         self._email_cooldown_secs = 60            # number of seconds between emails get sent
         self._email_next_allowed = 0.0               # monotonic timestamp
         self._email_inflight = False                 # prevent overlap
-        self._alert_sender = "jacques.attinger@gmail.com"
+        self._alert_sender = ALERT_SENDER
         self._alert_receiver = ALERT_RECEIVER
         self._gmail_app_password = GMAIL_APP_PASSWORD
 
@@ -359,24 +358,6 @@ class TemperaturePressureTab(QWidget):
             self._log_latest_readings()
         # self._update_plots()
         self._update_temperature_plot()
-
-    # if self._last_pressure < 5:
-    #     sender = 'jacques.attinger@gmail.com'
-    #     receiver = 'jacques.attinger@gmail.com'
-
-    #     subject = 'Low Pressure Alert'
-    #     message = f'The pressure in the chamber is quite low. It has a value of {self._last_pressure}'
-
-    #     text = f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{message}"
-
-    #     server = smtplib.SMTP("smtp.gmail.com", 587)
-    #     server.starttls()
-
-    #     server.login(sender, 'leximtegokofxrxa')
-
-    #     server.sendmail(sender, receiver, text)
-
-    #     print(f'email has been sent to {receiver}')
 
     def _maybe_alert_high_pressure(self, pressure_value: float) -> None:
         """If pressure is above threshold, queue an email (cooldown + nonblocking)."""

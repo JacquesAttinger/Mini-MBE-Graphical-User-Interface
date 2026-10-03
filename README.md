@@ -136,6 +136,7 @@ The **Temperature/Pressure** tab can send automated low-pressure alerts via emai
 
 3. **Edit `email_credentials.py`:**
    ```python
+   ALERT_SENDER = "your-sender@gmail.com"
    ALERT_RECEIVER = "your-email@gmail.com"
    GMAIL_APP_PASSWORD = "your-16-char-app-password"
    ```
