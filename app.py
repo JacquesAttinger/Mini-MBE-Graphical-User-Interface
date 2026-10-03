@@ -1,3 +1,4 @@
+# Last edited: 2026-10-03 13:35 CDT
 """Application entry point for the miniMBE GUI."""
 
 import argparse
@@ -8,8 +9,6 @@ from PySide6.QtWidgets import QApplication
 from controllers.manipulator_manager import ManipulatorManager
 from services.dxf_service import DxfService
 from windows.main_window import MainWindow
-
-sys.path.append('/Users/jacques/Documents/UChicago/UChicago Research/Yang Research/Mini-MBE GUI/miniMBE-GUI/services')
 
 
 def main():
